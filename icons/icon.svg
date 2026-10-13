@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>我的记账</title>
+  <rect width="512" height="512" fill="#f4f0e6"/>
+  <!-- ¥ 和点缀均位于中心半径 40% 的 maskable 安全区域内。 -->
+  <path d="M192 170 256 246 320 170 M210 250h92 M210 280h92 M256 246v92"
+    fill="none" stroke="#1c1a15" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="256" cy="374" r="6" fill="#8a2a33"/>
+</svg>

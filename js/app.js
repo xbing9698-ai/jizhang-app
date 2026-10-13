@@ -8,10 +8,11 @@ import {
   groupByCounterparty,
   buildPeriodTable
 } from './aggregate.js';
-import { billingPeriodRange, latestCompletedPeriod, prevPeriodRange, filterTransactionsByRange } from './period.js';
+import { billingPeriodRange, latestCompletedPeriod, prevPeriodRange, filterTransactionsByRange, billingPeriodLabel } from './period.js';
 import { renderCategoryPie, renderTrend, colorForCategory } from './charts.js';
 import { iconSvg } from './icons.js';
-import { createManualExpense, isManualTransaction, todayDate } from './manual.js';
+import { isManualTransaction } from './manual.js';
+import { newQuickEntry, keypadAmount, createQuickExpense } from './quick-entry.js';
 import { countedExpenseAmount, isValidCountedAmount, canAdjustTransaction, needsReview, filterNeedsReview } from './review.js';
 import {
   saveTransactions, loadAllTransactions, saveMemory, loadMemory,
@@ -65,41 +66,83 @@ async function onFiles(files) {
 }
 document.getElementById('fileInput').addEventListener('change', e => onFiles(e.target.files));
 
-// ===== 少量漏网支出的手动补录 =====
-const manualForm = document.getElementById('manualForm');
-const manualDate = document.getElementById('manualDate');
-const manualCategory = document.getElementById('manualCategory');
-manualCategory.innerHTML = CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('');
-manualCategory.value = '其他';
-manualDate.value = todayDate();
+// ===== 首页与导入页共用的快速支出记账 =====
+const quickDialog = document.getElementById('quickEntryDialog');
+const quickCategories = document.getElementById('quickCategories');
+let quickDraft = newQuickEntry();
+let quickSaving = false;
+quickCategories.innerHTML = CATEGORIES.map(cat =>
+  '<button type="button" class="quick-category" data-category="' + esc(cat) + '" aria-pressed="false">' +
+  iconSvg(cat, 20) + '<span>' + esc(cat) + '</span></button>').join('');
 
-manualForm.addEventListener('submit', async e => {
-  e.preventDefault();
-  const button = document.getElementById('manualSave');
-  if (button.disabled) return;
-  const msg = document.getElementById('manualMsg');
-  msg.className = 'import-msg';
-  button.disabled = true;
+function renderQuickEntry() {
+  document.getElementById('quickAmount').textContent = quickDraft.amount || '0.00';
+  quickCategories.querySelectorAll('button').forEach(button => {
+    const selected = button.dataset.category === quickDraft.category;
+    button.setAttribute('aria-pressed', String(selected));
+    button.classList.toggle('selected', selected);
+  });
+}
+function openQuickEntry() {
+  if (quickSaving || quickDialog.open) return;
+  quickDraft = newQuickEntry();
+  document.getElementById('quickDate').value = quickDraft.date;
+  document.getElementById('quickText').value = '';
+  document.getElementById('quickMsg').textContent = '';
+  document.getElementById('quickFeedback').textContent = '';
+  renderQuickEntry();
+  quickDialog.showModal();
+}
+['quickEntryOpen', 'quickEntryImportOpen'].forEach(id =>
+  document.getElementById(id).addEventListener('click', openQuickEntry));
+quickCategories.addEventListener('click', e => {
+  const button = e.target.closest('[data-category]');
+  if (!button || quickSaving) return;
+  quickDraft.category = button.dataset.category;
+  renderQuickEntry();
+});
+document.getElementById('quickKeypad').addEventListener('click', e => {
+  const button = e.target.closest('[data-key]');
+  if (!button || quickSaving) return;
+  quickDraft.amount = keypadAmount(quickDraft.amount, button.dataset.key);
+  document.getElementById('quickMsg').textContent = '';
+  renderQuickEntry();
+});
+document.getElementById('quickClose').addEventListener('click', () => {
+  if (!quickSaving) quickDialog.close();
+});
+quickDialog.addEventListener('cancel', e => { if (quickSaving) e.preventDefault(); });
+// 桌面也能输入数字；日期和说明仍采用各自的原生输入，不拦截文本编辑。
+quickDialog.addEventListener('keydown', e => {
+  if (e.target.matches('input') || quickSaving) return;
+  const key = e.key === 'Backspace' ? 'delete' : e.key;
+  if (/^[0-9.]$/.test(key) || key === 'delete') {
+    e.preventDefault();
+    quickDraft.amount = keypadAmount(quickDraft.amount, key);
+    renderQuickEntry();
+  }
+});
+document.getElementById('quickDone').addEventListener('click', async () => {
+  if (quickSaving) return;
+  const msg = document.getElementById('quickMsg');
+  quickSaving = true;
+  quickDialog.querySelectorAll('button,input').forEach(control => { control.disabled = true; });
   try {
-    const record = createManualExpense({
-      date: manualDate.value,
-      amount: document.getElementById('manualAmount').value,
-      category: manualCategory.value,
-      text: document.getElementById('manualText').value
-    });
+    const record = createQuickExpense({ ...quickDraft,
+      date: document.getElementById('quickDate').value,
+      text: document.getElementById('quickText').value });
     await saveTransactions([record]);
     transactions.push(record);
-    refreshAll(); // 保留正在查看的账期，不跳转日期范围。
-    manualForm.reset();
-    manualDate.value = todayDate();
-    manualCategory.value = '其他';
-    msg.textContent = '补录成功，可在对应账期或全部时间的明细中查看。';
-    msg.classList.add('ok');
+    refreshAll(); // 保留所查看的账期与页面。
+    quickDialog.close();
+    document.getElementById('quickFeedback').textContent =
+      '已记一笔：' + record.myCategory + ' ' + fmtMoney(record.amount) +
+      '（账期 ' + billingPeriodLabel(record.datetime) + '）。';
   } catch (err) {
-    msg.textContent = '补录失败：' + err.message;
-    msg.classList.add('error');
+    msg.textContent = '未保存：' + err.message;
   } finally {
-    button.disabled = false;
+    quickSaving = false;
+    quickDialog.querySelectorAll('button,input').forEach(control => { control.disabled = false; });
   }
 });
 
@@ -198,7 +241,7 @@ function rowHtml(t) {
     <td><span class="flow-badge ${dirClass}">${esc(directionLabel(t.direction))}</span></td>
     <td class="num amount-cell ${dirClass}">${fmtSignedMoney(t)}</td>
     <td>${esc(t.counterparty)}</td>
-    <td>${esc(t.description || (isManualTransaction(t) ? '手动补录' : ''))}${accountingBadges(t)}</td>
+    <td>${esc(t.description || (isManualTransaction(t) ? '手动记账' : ''))}${accountingBadges(t)}</td>
     <td><select class="cat-select" data-id="${esc(t.id)}">${opts}</select>
       ${isManualTransaction(t) ? `<button type="button" class="manual-delete" data-id="${esc(t.id)}"
         aria-label="删除手动记录：${esc(t.description || '未填说明')}">删除</button>` : ''}
@@ -280,7 +323,7 @@ async function onDeleteManual(e) {
   const id = button.dataset.id;
   const record = transactions.find(t => t.id === id);
   if (!isManualTransaction(record) || button.disabled) return;
-  if (!confirm('删除这条手动补录记录？输错后可重新补录。')) return;
+  if (!confirm('删除这条手动记账记录？输错后可重新记一笔。')) return;
   button.disabled = true;
   const msg = document.getElementById('manualDeleteMsg');
   msg.className = 'import-msg';
@@ -349,7 +392,7 @@ async function onChangeCategory(e) {
     for (const o of transactions)
       if (o.counterparty === cp && !isManualTransaction(o)) { o.myCategory = cat; o.manual = true; touched.push(o); }
   } else {
-    // 手动补录或无对方：只改这一笔，保留其他补录记录各自选择的分类。
+    // 手动记账或无对方：只改这一笔，保留其他手动记录各自选择的分类。
     t.myCategory = cat; t.manual = true; touched.push(t);
   }
   await saveTransactions(touched);
