@@ -1,4 +1,4 @@
-const CACHE = 'jizhang-v18';
+const CACHE = 'jizhang-v19';
 const ASSETS = [
   './', './index.html', './css/style.css',
   './js/app.js','./js/decode.js','./js/parse-alipay.js','./js/parse-wechat.js',
@@ -15,7 +15,9 @@ const ASSETS = [
   './manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png'
 ];
 self.addEventListener('install', e =>
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting())));
+  // 新版本预缓存绕过旧 HTTP 缓存，避免把旧首页或图标带入新缓存。
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS.map(url =>
+    new Request(url, { cache: 'reload' })))).then(() => self.skipWaiting())));
 self.addEventListener('activate', e =>
   e.waitUntil(caches.keys().then(keys =>
     Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())));
