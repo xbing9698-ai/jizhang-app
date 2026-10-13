@@ -1,15 +1,11 @@
 import { isCountableExpense } from './dedup.js';
+import { billingPeriodLabel, filterTransactionsByRange } from './period.js';
 
 export function summarize(transactions, range) {
-  const inRange = t => {
-    const d = t.datetime.slice(0, 10);
-    return (!range?.start || d >= range.start) && (!range?.end || d <= range.end);
-  };
   const s = { totalExpense: 0, totalIncome: 0, net: 0, count: 0,
     byCategory: {}, byDay: {}, topExpenses: [] };
   const expenses = [];
-  for (const t of transactions) {
-    if (!inRange(t)) continue;
+  for (const t of filterTransactionsByRange(transactions, range)) {
     if (isCountableExpense(t)) {
       s.totalExpense += t.amount;
       s.count += 1;
@@ -31,16 +27,6 @@ export function summarize(transactions, range) {
   return s;
 }
 
-// 上一个月的范围（用于环比）。传入 {start:'2026-05-01'} -> 返回 2026-04 的范围
-export function prevMonthRange(range) {
-  if (!range?.start) return null;
-  const [y, m] = range.start.slice(0, 7).split('-').map(Number);
-  const py = m === 1 ? y - 1 : y;
-  const pm = m === 1 ? 12 : m - 1;
-  const ym = `${py}-${String(pm).padStart(2, '0')}`;
-  return { start: `${ym}-01`, end: `${ym}-31`, label: ym };
-}
-
 // 搜索匹配：跨"对方/商品/备注/分类/金额"字段做包含匹配。空查询全通过。
 export function matchesSearch(t, query) {
   if (!query) return true;
@@ -51,9 +37,9 @@ export function matchesSearch(t, query) {
 }
 
 // 按"交易对方"汇总，返回 [{counterparty, total, count, items}]，按金额降序。
-export function groupByCounterparty(transactions) {
+export function groupByCounterparty(transactions, range) {
   const map = new Map();
-  for (const t of transactions) {
+  for (const t of filterTransactionsByRange(transactions, range)) {
     const key = t.counterparty || '（未填对方）';
     if (!map.has(key)) map.set(key, {
       counterparty: key,
@@ -89,11 +75,10 @@ export function groupByCounterparty(transactions) {
   return groups.sort((a, b) => b.expense - a.expense || b.income - a.income);
 }
 
-export function buildPeriodTable(transactions, mode = 'month') {
-  const len = mode === 'year' ? 4 : 7;
+export function buildPeriodTable(transactions) {
   const map = new Map();
   for (const t of transactions) {
-    const period = String(t.datetime || '').slice(0, len);
+    const period = billingPeriodLabel(t.datetime);
     if (!period) continue;
     if (!map.has(period)) map.set(period, {
       period,

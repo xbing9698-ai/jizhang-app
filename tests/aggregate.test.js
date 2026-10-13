@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 const {
   summarize,
-  prevMonthRange,
   matchesSearch,
   groupByCounterparty,
   buildPeriodTable
@@ -86,7 +85,7 @@ test('groupByCounterparty 按对方汇总并按金额降序', () => {
   assert.strictEqual(groups[1].total, 5);
 });
 
-test('buildPeriodTable 按月生成支出表并倒序排列', () => {
+test('buildPeriodTable 按账期生成支出表并倒序排列', () => {
   const list = [
     { datetime:'2026-04-01T10:00:00', amount:30, direction:'支出', status:'交易成功' },
     { datetime:'2026-04-02T10:00:00', amount:20, direction:'收入', status:'交易成功' },
@@ -94,7 +93,7 @@ test('buildPeriodTable 按月生成支出表并倒序排列', () => {
     { datetime:'2026-05-02T10:00:00', amount:10, direction:'支出', status:'交易关闭' },
     { datetime:'2026-05-03T10:00:00', amount:7, direction:'中性', status:'交易成功' },
   ];
-  const rows = buildPeriodTable(list, 'month');
+  const rows = buildPeriodTable(list);
   assert.deepStrictEqual(rows.map(r => r.period), ['2026-05', '2026-04']);
   assert.strictEqual(rows[0].expense, 50);
   assert.strictEqual(rows[0].income, 0);
@@ -105,16 +104,16 @@ test('buildPeriodTable 按月生成支出表并倒序排列', () => {
   assert.strictEqual(rows[1].net, -10);
 });
 
-test('buildPeriodTable 按年生成支出表', () => {
+test('buildPeriodTable 跨年记录按账期结束月分组', () => {
   const list = [
     { datetime:'2025-12-31T10:00:00', amount:9, direction:'支出', status:'交易成功' },
     { datetime:'2026-01-01T10:00:00', amount:30, direction:'支出', status:'交易成功' },
     { datetime:'2026-02-01T10:00:00', amount:80, direction:'收入', status:'交易成功' },
   ];
-  const rows = buildPeriodTable(list, 'year');
-  assert.deepStrictEqual(rows.map(r => r.period), ['2026', '2025']);
-  assert.strictEqual(rows[0].expense, 30);
+  const rows = buildPeriodTable(list);
+  assert.deepStrictEqual(rows.map(r => r.period), ['2026-02', '2026-01']);
+  assert.strictEqual(rows[0].expense, 0);
   assert.strictEqual(rows[0].income, 80);
-  assert.strictEqual(rows[0].net, 50);
-  assert.strictEqual(rows[1].expense, 9);
+  assert.strictEqual(rows[0].net, 80);
+  assert.strictEqual(rows[1].expense, 39);
 });

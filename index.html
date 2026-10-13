@@ -33,10 +33,10 @@
     <section class="view active" id="view-overview">
       <div class="range-bar">
         <label class="range-field">
-          <span>月份</span>
-          <input type="month" id="monthPick">
+          <span>账期结束月</span>
+          <input type="month" id="monthPick" title="上月15日～本月14日">
         </label>
-        <button class="chip" id="allRange">全部</button>
+        <button class="chip" id="allRange">全部时间</button>
         <span class="range-label" id="rangeLabel"></span>
       </div>
 
@@ -76,33 +76,19 @@
 
       <div class="card" id="periodCard">
         <div class="card-head">
-          <h2 class="card-title">支出表</h2>
-          <div class="mini-toggle" id="periodToggle" role="tablist" aria-label="支出表周期">
-            <button class="mini-seg active" data-period-mode="month" role="tab">月度</button>
-            <button class="mini-seg" data-period-mode="year" role="tab">年度</button>
-          </div>
+          <h2 class="card-title">历史账期汇总</h2>
+          <span class="card-meta">上月15日～本月14日</span>
         </div>
         <div class="table-scroll period-table-wrap">
           <table id="periodTable">
             <thead><tr>
-              <th>期间</th><th class="num">支出</th><th class="num">收入</th>
+              <th>账期（结束月）</th><th class="num">支出</th><th class="num">收入</th>
               <th class="num">结余</th><th>笔数</th>
             </tr></thead>
             <tbody></tbody>
           </table>
           <p class="empty-hint" id="periodEmpty">还没有可统计的账单</p>
         </div>
-      </div>
-
-      <div class="card" id="calendarCard" hidden>
-        <div class="card-head">
-          <h2 class="card-title">收支日历</h2>
-          <span class="card-meta" id="calendarHint">颜色越深，当天花得越多</span>
-        </div>
-        <div class="cal-weekdays">
-          <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
-        </div>
-        <div class="cal-grid" id="calGrid"></div>
       </div>
 
       <div class="card" id="topCard" hidden>

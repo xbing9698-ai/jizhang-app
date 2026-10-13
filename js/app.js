@@ -3,11 +3,11 @@ import { mergeTransactions } from './dedup.js';
 import { classify, resolveCategory, CATEGORIES } from './classify.js';
 import {
   summarize,
-  prevMonthRange,
   matchesSearch,
   groupByCounterparty,
   buildPeriodTable
 } from './aggregate.js';
+import { billingPeriodRange, latestCompletedPeriod, prevPeriodRange, filterTransactionsByRange } from './period.js';
 import { renderCategoryPie, renderTrend, colorForCategory } from './charts.js';
 import { iconSvg } from './icons.js';
 import {
@@ -18,14 +18,7 @@ import {
 // ===== 状态 =====
 let transactions = [];
 let memory = {};
-let range = currentMonthRange();
-let periodMode = 'month';
-
-function currentMonthRange() {
-  const now = new Date();
-  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  return { start: `${ym}-01`, end: `${ym}-31`, label: ym };
-}
+let range = latestCompletedPeriod();
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -77,13 +70,8 @@ function filteredTransactions() {
   const dir = document.getElementById('filterDirection').value;
   const onlyUncat = document.getElementById('onlyUncat').checked;
   const query = document.getElementById('searchInput').value;
-  // 跟随概览当前时间范围：从某月下钻进来时，只看该月（range 为"全部"时不限时间）
-  const inRange = t => {
-    const d = t.datetime.slice(0, 10);
-    return (!range.start || d >= range.start) && (!range.end || d <= range.end);
-  };
-  return transactions.filter(t =>
-    inRange(t) &&
+  // 明细、分类下钻及商户汇总共用概览账期；全部时间时解除日期限制。
+  return filterTransactionsByRange(transactions, range).filter(t =>
     (!src || t.source === src) &&
     (!cat || t.myCategory === cat) &&
     (!dir || t.direction === dir) &&
@@ -91,14 +79,14 @@ function filteredTransactions() {
     matchesSearch(t, query));
 }
 
-// 明细页顶部的时间范围标记：透明告知"正在只看某月"，并可一键看全部
+// 明细页明确展示账期结束月及实际起止日期，并可一键看全部。
 function updateDetailTimeChip() {
   const chip = document.getElementById('detailTimeChip');
   if (!chip) return;
   if (range.start) {
     chip.hidden = false;
-    chip.innerHTML = `仅看 ${range.label} <span class="x" aria-hidden="true">✕</span>`;
-    chip.setAttribute('aria-label', `当前只显示 ${range.label} 的账单，点击查看全部时间`);
+    chip.innerHTML = `账期 ${range.label}（${range.start} ～ ${range.end}） <span class="x" aria-hidden="true">✕</span>`;
+    chip.setAttribute('aria-label', `当前只显示账期 ${range.label}，${range.start} 至 ${range.end}，点击查看全部时间`);
   } else {
     chip.hidden = true;
   }
@@ -246,11 +234,11 @@ function directionClass(t) {
 // 环比变化文字（本期 vs 上期），返回 {text, cls}
 function deltaInfo(cur, prev) {
   if (prev == null || range.label === '全部') return { text: '', cls: '' };
-  if (prev === 0) return cur > 0 ? { text: '较上月新增', cls: 'up' } : { text: '', cls: '' };
+  if (prev === 0) return cur > 0 ? { text: '较上一账期新增', cls: 'up' } : { text: '', cls: '' };
   const pct = (cur - prev) / prev * 100;
   const arrow = pct > 0 ? '↑' : pct < 0 ? '↓' : '';
   const cls = pct > 0 ? 'up' : pct < 0 ? 'down' : '';
-  return { text: `较上月 ${arrow}${Math.abs(pct).toFixed(0)}%`, cls };
+  return { text: `较上一账期 ${arrow}${Math.abs(pct).toFixed(0)}%`, cls };
 }
 
 function drillToCategory(cat) {
@@ -311,37 +299,8 @@ function renderTopList(topExpenses) {
   }).join('');
 }
 
-function renderCalendar(byDay, monthLabel) {
-  const card = document.getElementById('calendarCard');
-  const grid = document.getElementById('calGrid');
-  // 仅在选中具体月份时显示日历（"全部"时无意义）
-  if (!/^\d{4}-\d{2}$/.test(monthLabel)) { card.hidden = true; return; }
-  card.hidden = false;
-  const [y, m] = monthLabel.split('-').map(Number);
-  const daysInMonth = new Date(y, m, 0).getDate();
-  // 该月1号是周几（把周日的0转成7，让周一为首列）
-  let firstDow = new Date(y, m - 1, 1).getDay();
-  firstDow = firstDow === 0 ? 7 : firstDow;
-  const max = Math.max(0, ...Object.values(byDay));
-  let cells = '';
-  for (let i = 1; i < firstDow; i++) cells += '<span class="cal-cell cal-empty"></span>';
-  for (let d = 1; d <= daysInMonth; d++) {
-    const key = `${monthLabel}-${String(d).padStart(2, '0')}`;
-    const amt = byDay[key] || 0;
-    // 颜色深浅：0=空白，>0 按占最大值比例分 4 档
-    let lvl = 0;
-    if (amt > 0 && max > 0) lvl = Math.min(4, Math.ceil(amt / max * 4));
-    const title = amt > 0 ? `${key} 支出 ${fmtMoney(amt)}` : `${key} 无支出`;
-    cells += `<span class="cal-cell cal-l${lvl}" title="${title}">
-      <span class="cal-day">${d}</span>
-      ${amt > 0 ? `<span class="cal-amt">${amt >= 100 ? Math.round(amt) : amt.toFixed(0)}</span>` : ''}
-    </span>`;
-  }
-  grid.innerHTML = cells;
-}
-
 function renderPeriodTable() {
-  const rows = buildPeriodTable(transactions, periodMode);
+  const rows = buildPeriodTable(transactions);
   const tbody = document.querySelector('#periodTable tbody');
   document.getElementById('periodEmpty').hidden = rows.length > 0;
   tbody.innerHTML = rows.map(r => `<tr>
@@ -355,12 +314,14 @@ function renderPeriodTable() {
 
 function refreshDashboard() {
   const s = summarize(transactions, range);
-  const prev = summarize(transactions, prevMonthRange(range));
+  const previousRange = prevPeriodRange(range);
+  const prev = previousRange ? summarize(transactions, previousRange) : null;
 
   document.getElementById('sumExpense').textContent = fmtMoney(s.totalExpense);
   document.getElementById('sumIncome').textContent = fmtMoney(s.totalIncome);
   document.getElementById('sumNet').textContent = fmtMoney(s.net);
-  document.getElementById('rangeLabel').textContent = range.label === '全部' ? '全部时间' : range.label;
+  document.getElementById('rangeLabel').textContent = range.label === '全部'
+    ? '全部时间' : `账期 ${range.label} · ${range.start} ～ ${range.end}`;
   document.getElementById('expenseCount').textContent = s.count ? `${s.count} 笔` : '';
 
   const ed = deltaInfo(s.totalExpense, prev ? prev.totalExpense : null);
@@ -382,10 +343,6 @@ function refreshDashboard() {
   renderCatList(s.byCategory, s.totalExpense);
   renderTopList(s.topExpenses);
 
-  // 收支日历（仅具体月份，且有数据时）
-  if (hasData) renderCalendar(s.byDay, range.label);
-  else document.getElementById('calendarCard').hidden = true;
-
   const trendCard = document.getElementById('trendCard');
   trendCard.hidden = !hasData;
   if (hasData) renderTrend(document.getElementById('trendChart'), s.byDay);
@@ -395,23 +352,15 @@ function refreshDashboard() {
 document.getElementById('monthPick').addEventListener('change', e => {
   const ym = e.target.value;
   if (!ym) return;
-  range = { start: `${ym}-01`, end: `${ym}-31`, label: ym };
+  range = billingPeriodRange(ym);
   refreshAll();
 });
 document.getElementById('allRange').addEventListener('click', () => {
   range = { start: null, end: null, label: '全部' };
   refreshAll();
 });
-document.getElementById('periodToggle').addEventListener('click', e => {
-  const btn = e.target.closest('.mini-seg');
-  if (!btn) return;
-  periodMode = btn.dataset.periodMode;
-  document.querySelectorAll('#periodToggle .mini-seg').forEach(b =>
-    b.classList.toggle('active', b === btn));
-  renderPeriodTable();
-});
-
 function refreshAll() {
+  document.getElementById('monthPick').value = range.start ? range.label : '';
   populateCategoryFilter();
   renderDetail();
   refreshDashboard();
@@ -438,7 +387,6 @@ document.getElementById('clearBtn').addEventListener('click', async () => {
 
 // ===== 启动 =====
 (async () => {
-  document.getElementById('monthPick').value = range.label;
   memory = await loadMemory();
   transactions = await loadAllTransactions();
   classifyAll();
