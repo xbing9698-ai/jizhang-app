@@ -3,6 +3,7 @@ import { mergeTransactions } from './dedup.js';
 import { classify, resolveCategory, CATEGORIES } from './classify.js';
 import {
   summarize,
+  filterTransactionsBySource,
   matchesSearch,
   groupByCounterparty,
   buildPeriodTable
@@ -10,9 +11,10 @@ import {
 import { billingPeriodRange, latestCompletedPeriod, prevPeriodRange, filterTransactionsByRange } from './period.js';
 import { renderCategoryPie, renderTrend, colorForCategory } from './charts.js';
 import { iconSvg } from './icons.js';
+import { createManualExpense, isManualTransaction, todayDate } from './manual.js';
 import {
   saveTransactions, loadAllTransactions, saveMemory, loadMemory,
-  clearAllData, exportBackup, importBackup
+  clearAllData, exportBackup, importBackup, deleteManualTransaction
 } from './storage.js';
 
 // ===== 状态 =====
@@ -61,6 +63,44 @@ async function onFiles(files) {
 }
 document.getElementById('fileInput').addEventListener('change', e => onFiles(e.target.files));
 
+// ===== 少量漏网支出的手动补录 =====
+const manualForm = document.getElementById('manualForm');
+const manualDate = document.getElementById('manualDate');
+const manualCategory = document.getElementById('manualCategory');
+manualCategory.innerHTML = CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('');
+manualCategory.value = '其他';
+manualDate.value = todayDate();
+
+manualForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  const button = document.getElementById('manualSave');
+  if (button.disabled) return;
+  const msg = document.getElementById('manualMsg');
+  msg.className = 'import-msg';
+  button.disabled = true;
+  try {
+    const record = createManualExpense({
+      date: manualDate.value,
+      amount: document.getElementById('manualAmount').value,
+      category: manualCategory.value,
+      text: document.getElementById('manualText').value
+    });
+    await saveTransactions([record]);
+    transactions.push(record);
+    refreshAll(); // 保留正在查看的账期，不跳转日期范围。
+    manualForm.reset();
+    manualDate.value = todayDate();
+    manualCategory.value = '其他';
+    msg.textContent = '补录成功，可在对应账期或全部时间的明细中查看。';
+    msg.classList.add('ok');
+  } catch (err) {
+    msg.textContent = '补录失败：' + err.message;
+    msg.classList.add('error');
+  } finally {
+    button.disabled = false;
+  }
+});
+
 // ===== 明细 =====
 let detailMode = 'list'; // 'list' | 'merchant'
 
@@ -71,8 +111,7 @@ function filteredTransactions() {
   const onlyUncat = document.getElementById('onlyUncat').checked;
   const query = document.getElementById('searchInput').value;
   // 明细、分类下钻及商户汇总共用概览账期；全部时间时解除日期限制。
-  return filterTransactionsByRange(transactions, range).filter(t =>
-    (!src || t.source === src) &&
+  return filterTransactionsBySource(filterTransactionsByRange(transactions, range), src).filter(t =>
     (!cat || t.myCategory === cat) &&
     (!dir || t.direction === dir) &&
     (!onlyUncat || t.myCategory === '其他') &&
@@ -113,8 +152,11 @@ function rowHtml(t) {
     <td><span class="flow-badge ${dirClass}">${esc(directionLabel(t.direction))}</span></td>
     <td class="num amount-cell ${dirClass}">${fmtSignedMoney(t)}</td>
     <td>${esc(t.counterparty)}</td>
-    <td>${esc(t.description)}</td>
-    <td><select class="cat-select" data-id="${esc(t.id)}">${opts}</select></td>
+    <td>${esc(t.description || (isManualTransaction(t) ? '手动补录' : ''))}</td>
+    <td><select class="cat-select" data-id="${esc(t.id)}">${opts}</select>
+      ${isManualTransaction(t) ? `<button type="button" class="manual-delete" data-id="${esc(t.id)}"
+        aria-label="删除手动记录：${esc(t.description || '未填说明')}">删除</button>` : ''}
+    </td>
   </tr>`;
 }
 
@@ -124,6 +166,30 @@ function renderListView(rows) {
   tbody.innerHTML = rows.map(rowHtml).join('');
   tbody.querySelectorAll('.cat-select').forEach(sel =>
     sel.addEventListener('change', onChangeCategory));
+  tbody.querySelectorAll('.manual-delete').forEach(button =>
+    button.addEventListener('click', onDeleteManual));
+}
+
+async function onDeleteManual(e) {
+  const button = e.currentTarget;
+  const id = button.dataset.id;
+  const record = transactions.find(t => t.id === id);
+  if (!isManualTransaction(record) || button.disabled) return;
+  if (!confirm('删除这条手动补录记录？输错后可重新补录。')) return;
+  button.disabled = true;
+  const msg = document.getElementById('manualDeleteMsg');
+  msg.className = 'import-msg';
+  try {
+    await deleteManualTransaction(id);
+    transactions = transactions.filter(t => t.id !== id);
+    refreshAll();
+    msg.textContent = '手动记录已删除，统计已更新。';
+    msg.classList.add('ok');
+  } catch (err) {
+    msg.textContent = '删除失败：' + err.message;
+    msg.classList.add('error');
+    button.disabled = false;
+  }
 }
 
 function renderMerchantView(rows) {
@@ -171,14 +237,14 @@ async function onChangeCategory(e) {
   const cp = t.counterparty;
   const realMerchant = cp && cp !== '/';   // 真实商户名才适合做"记忆"与批量联动
   const touched = [];
-  if (realMerchant) {
+  if (realMerchant && !isManualTransaction(t)) {
     // 真实商户：记住该商户，同商户记录全部联动
     memory[cp] = cat;
     await saveMemory(cp, cat);
     for (const o of transactions)
-      if (o.counterparty === cp) { o.myCategory = cat; o.manual = true; touched.push(o); }
+      if (o.counterparty === cp && !isManualTransaction(o)) { o.myCategory = cat; o.manual = true; touched.push(o); }
   } else {
-    // 无对方(如转账/退款/"/")：只改这一笔，不波及其他同样无对方的交易
+    // 手动补录或无对方：只改这一笔，保留其他补录记录各自选择的分类。
     t.myCategory = cat; t.manual = true; touched.push(t);
   }
   await saveTransactions(touched);

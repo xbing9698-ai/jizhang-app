@@ -115,6 +115,7 @@
           <option value="">全部来源</option>
           <option value="支付宝">支付宝</option>
           <option value="微信">微信</option>
+          <option value="手动">手动</option>
         </select>
         <select id="filterCategory" class="select-sm">
           <option value="">全部分类</option>
@@ -129,6 +130,7 @@
         <span class="count-badge" id="detailCount">0 条</span>
       </div>
       <button class="time-chip" id="detailTimeChip" hidden></button>
+      <p class="import-msg" id="manualDeleteMsg" role="status" aria-live="polite"></p>
       <div class="seg-toggle" id="viewToggle" role="tablist">
         <button class="seg active" data-mode="list" role="tab">明细列表</button>
         <button class="seg" data-mode="merchant" role="tab">按商户汇总</button>
@@ -158,6 +160,27 @@
         </label>
         <p class="import-msg" id="importMsg"></p>
       </div>
+
+      <details class="card manual-card">
+        <summary>手动补录</summary>
+        <p class="card-desc">补充少量未导入的支出，来源固定为「手动」。</p>
+        <form id="manualForm" class="manual-form">
+          <label>日期
+            <input type="date" id="manualDate" required>
+          </label>
+          <label>金额（元）
+            <input type="number" id="manualAmount" inputmode="decimal" min="0.01" step="0.01" required>
+          </label>
+          <label class="manual-wide">分类
+            <select id="manualCategory" required></select>
+          </label>
+          <label class="manual-wide">商户 / 说明（可选）
+            <input type="text" id="manualText" placeholder="例如现金午餐、订阅费用">
+          </label>
+          <button type="submit" class="btn btn-primary manual-wide" id="manualSave">保存支出</button>
+        </form>
+        <p class="import-msg" id="manualMsg" role="status" aria-live="polite"></p>
+      </details>
 
       <div class="card">
         <h2 class="card-title">数据备份</h2>

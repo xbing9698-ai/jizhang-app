@@ -1,6 +1,10 @@
 import { isCountableExpense } from './dedup.js';
 import { billingPeriodLabel, filterTransactionsByRange } from './period.js';
 
+export function filterTransactionsBySource(transactions, source = '') {
+  return transactions.filter(t => !source || t.source === source);
+}
+
 export function summarize(transactions, range) {
   const s = { totalExpense: 0, totalIncome: 0, net: 0, count: 0,
     byCategory: {}, byDay: {}, topExpenses: [] };

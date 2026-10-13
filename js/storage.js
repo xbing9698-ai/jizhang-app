@@ -1,3 +1,5 @@
+import { isManualTransaction } from './manual.js';
+
 const DB_NAME = 'jizhang', STORE_TXN = 'transactions', STORE_MEM = 'merchantMemory';
 
 function openDb() {
@@ -28,6 +30,28 @@ export async function loadAllTransactions() {
   return new Promise((res, rej) => {
     const req = db.transaction(STORE_TXN).objectStore(STORE_TXN).getAll();
     req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error);
+  });
+}
+
+// 在同一读写事务中检查实际存储的来源，不能凭页面参数删除导入记录。
+export async function deleteManualTransaction(id) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_TXN, 'readwrite');
+    const store = tx.objectStore(STORE_TXN);
+    let refusal;
+    const req = store.get(id);
+    req.onsuccess = () => {
+      if (!isManualTransaction(req.result)) {
+        refusal = new Error('只能删除手动补录记录');
+        tx.abort();
+        return;
+      }
+      store.delete(id);
+    };
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(refusal || tx.error || new Error('删除未完成'));
   });
 }
 
