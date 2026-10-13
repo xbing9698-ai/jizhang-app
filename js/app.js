@@ -1,7 +1,4 @@
-import { decodeSmart } from './decode.js';
-import { parseAlipayCsv } from './parse-alipay.js';
-import { readWechatFile, parseWechatRows } from './parse-wechat.js';
-import { normalizeAlipay, normalizeWechat } from './normalize.js';
+import { fileToTransactions } from './import-transactions.js';
 import { mergeTransactions } from './dedup.js';
 import { classify, resolveCategory, CATEGORIES } from './classify.js';
 import {
@@ -32,19 +29,6 @@ function currentMonthRange() {
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-
-// ===== 文件 -> 交易 =====
-async function fileToTransactions(file) {
-  if (file.name.endsWith('.csv')) {
-    const text = decodeSmart(await file.arrayBuffer());
-    return parseAlipayCsv(text).map(normalizeAlipay);
-  }
-  if (file.name.endsWith('.xlsx')) {
-    const rows = await readWechatFile(file);
-    return parseWechatRows(rows).map(normalizeWechat);
-  }
-  throw new Error('不支持的文件类型：' + file.name);
-}
 
 function classifyAll() {
   for (const t of transactions) t.myCategory = resolveCategory(t, memory);

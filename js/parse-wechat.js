@@ -1,6 +1,6 @@
 // readWechatFile：浏览器中用 SheetJS 读取 File，cellDates 让时间序列号转 Date
-export async function readWechatFile(file) {
-  const buf = await file.arrayBuffer();
+export async function readWechatFile(file, buf = null) {
+  buf ??= await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: 'array', cellDates: true });
   const sheet = wb.Sheets[wb.SheetNames[0]];
   return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });

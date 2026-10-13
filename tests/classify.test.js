@@ -60,3 +60,16 @@ test('resolveCategory: 未手动标记时回退到规则', () => {
   const t = { ...base, source:'微信', counterparty:'塔斯汀', rawCategory:'商户消费' };
   assert.strictEqual(resolveCategory(t, {}), '餐饮');
 });
+
+test('记账本已有分类映射到现有体系，优先于备注关键词', () => {
+  for (const [rawCategory, expected] of [
+    ['餐饮','餐饮'], ['购物','购物'], ['交通','交通'], ['生活日用','购物'],
+    ['医疗保健','医疗健康'], ['其他','其他']
+  ]) {
+    assert.strictEqual(classify({ ...base, rawCategory, description:'地铁午餐' }), expected);
+  }
+});
+
+test('旧记录缺少新增字段时分类继续安全运行', () => {
+  assert.strictEqual(resolveCategory({ source:'支付宝', rawCategory:'餐饮美食' }), '餐饮');
+});
