@@ -414,7 +414,9 @@ function deltaInfo(cur, prev) {
 
 function drillToCategory(cat) {
   document.getElementById('filterSource').value = '';
+  document.getElementById('filterDirection').value = '';
   document.getElementById('onlyUncat').checked = false;
+  document.getElementById('onlyNeedsReview').checked = false;
   document.getElementById('filterCategory').value = cat;
   document.getElementById('searchInput').value = '';
   // 下钻默认进入"按商户汇总"，直观看到该类钱给了谁
