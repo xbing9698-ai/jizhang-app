@@ -307,6 +307,26 @@ tr.hl{background:var(--accent-weak)}
 .manual-delete:disabled,#manualSave:disabled{opacity:.5;cursor:wait}
 #manualDeleteMsg:empty{display:none}
 
+/* ===== 少量特殊支出的人工处理 ===== */
+.review-badge,.accounting-note{display:block;margin-top:5px;font-size:12px;white-space:normal}
+.review-badge{color:var(--accent);font-weight:700}
+.accounting-note{color:var(--mute)}
+.adjust-txn{display:block;margin-top:6px;min-height:44px;padding:6px 12px;
+  border:1px solid var(--line);border-radius:var(--r-sm);background:var(--card);color:var(--ink);font:inherit;font-size:12px;cursor:pointer}
+.adjustment-dialog{width:min(440px,calc(100% - 32px));max-height:calc(100dvh - 32px);
+  margin:auto;padding:20px;border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--card);color:var(--ink);overflow-y:auto}
+.adjustment-dialog::backdrop{background:rgba(28,26,21,.4)}
+.adjustment-dialog h2{font-size:18px;margin-bottom:16px}
+.adjustment-facts{display:grid;grid-template-columns:85px minmax(0,1fr);gap:8px;margin-bottom:16px;font-size:13px}
+.adjustment-facts dt{color:var(--mute)}
+.adjustment-facts dd{overflow-wrap:anywhere}
+.adjustment-form{display:grid;gap:10px;margin-top:16px;font-size:13px}
+.adjustment-form input{width:100%;min-height:44px;padding:8px;font-size:16px;
+  border:1px solid var(--line);border-radius:var(--r-sm);background:var(--card);color:var(--ink)}
+.adjustment-dialog button:disabled{opacity:.5;cursor:wait}
+#adjustmentFeedback:empty{display:none}
+
 /* ===== 按钮 ===== */
 .btn{border:none;cursor:pointer;font-family:var(--serif);font-size:14px;font-weight:500;
   padding:10px var(--sp-xl);border-radius:var(--r-pill);

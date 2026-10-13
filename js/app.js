@@ -12,15 +12,17 @@ import { billingPeriodRange, latestCompletedPeriod, prevPeriodRange, filterTrans
 import { renderCategoryPie, renderTrend, colorForCategory } from './charts.js';
 import { iconSvg } from './icons.js';
 import { createManualExpense, isManualTransaction, todayDate } from './manual.js';
+import { countedExpenseAmount, isValidCountedAmount, canAdjustTransaction, needsReview, filterNeedsReview } from './review.js';
 import {
   saveTransactions, loadAllTransactions, saveMemory, loadMemory,
-  clearAllData, exportBackup, importBackup, deleteManualTransaction
+  clearAllData, exportBackup, importBackup, deleteManualTransaction, saveExpenseAdjustment
 } from './storage.js';
 
 // ===== 状态 =====
 let transactions = [];
 let memory = {};
 let range = latestCompletedPeriod();
+let lastImport = null;
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -52,11 +54,11 @@ async function onFiles(files) {
     transactions = merged;
     classifyAll();
     await saveTransactions(transactions);
+    lastImport = { added, skipped };
     refreshAll();
-    msg.textContent = `本次新增 ${added} 条，去重跳过 ${skipped} 条，共 ${transactions.length} 条。`;
-    msg.classList.add('ok');
-    switchView('overview');
+    switchView(filterNeedsReview(transactions).length ? 'import' : 'overview');
   } catch (err) {
+    lastImport = null;
     msg.textContent = '导入失败：' + err.message;
     msg.classList.add('error');
   }
@@ -104,6 +106,34 @@ manualForm.addEventListener('submit', async e => {
 // ===== 明细 =====
 let detailMode = 'list'; // 'list' | 'merchant'
 
+function refreshReviewNotice() {
+  const pending = filterNeedsReview(transactions).length;
+  const button = document.getElementById('reviewPending');
+  button.hidden = pending === 0;
+  button.textContent = `查看需处理（${pending}条）`;
+  if (lastImport) {
+    const msg = document.getElementById('importMsg');
+    msg.className = 'import-msg ok';
+    msg.textContent = `本次新增 ${lastImport.added} 条，重复跳过 ${lastImport.skipped} 条，` +
+      (pending ? `当前需处理 ${pending} 条（全部时间）。` : '当前无需处理。');
+  }
+}
+
+document.getElementById('reviewPending').addEventListener('click', () => {
+  range = { start:null, end:null, label:'全部' };
+  document.getElementById('onlyNeedsReview').checked = true;
+  document.getElementById('filterSource').value = '';
+  document.getElementById('filterCategory').value = '';
+  document.getElementById('filterDirection').value = '';
+  document.getElementById('onlyUncat').checked = false;
+  document.getElementById('searchInput').value = '';
+  detailMode = 'list';
+  document.querySelectorAll('#viewToggle .seg').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === 'list'));
+  refreshAll();
+  switchView('detail');
+});
+
 function filteredTransactions() {
   const src = document.getElementById('filterSource').value;
   const cat = document.getElementById('filterCategory').value;
@@ -115,6 +145,7 @@ function filteredTransactions() {
     (!cat || t.myCategory === cat) &&
     (!dir || t.direction === dir) &&
     (!onlyUncat || t.myCategory === '其他') &&
+    (!document.getElementById('onlyNeedsReview').checked || needsReview(t)) &&
     matchesSearch(t, query));
 }
 
@@ -141,6 +172,21 @@ function renderDetail() {
   else renderMerchantView(rows);
 }
 
+function accountingNote(t) {
+  if (t.direction !== '支出') return '';
+  if (t.excluded === true) return `原 ${fmtMoney(t.amount)} · 不计入统计`;
+  if (t.status === '交易关闭') return `原 ${fmtMoney(t.amount)} · 交易关闭自动不计入`;
+  if (isValidCountedAmount(t.countedAmount, t.amount))
+    return `原 ${fmtMoney(t.amount)} → 计入 ${fmtMoney(countedExpenseAmount(t))}`;
+  return t.reviewed === true ? '已处理 · 按原规则计入' : '';
+}
+
+function accountingBadges(t) {
+  const reason = needsReview(t) ? `<small class="review-badge">需处理：${esc(t.status)}</small>` : '';
+  const note = accountingNote(t);
+  return reason + (note ? `<small class="accounting-note">${esc(note)}</small>` : '');
+}
+
 function rowHtml(t) {
   const opts = CATEGORIES.map(c =>
     `<option value="${c}"${c === t.myCategory ? ' selected' : ''}>${c}</option>`).join('');
@@ -152,10 +198,12 @@ function rowHtml(t) {
     <td><span class="flow-badge ${dirClass}">${esc(directionLabel(t.direction))}</span></td>
     <td class="num amount-cell ${dirClass}">${fmtSignedMoney(t)}</td>
     <td>${esc(t.counterparty)}</td>
-    <td>${esc(t.description || (isManualTransaction(t) ? '手动补录' : ''))}</td>
+    <td>${esc(t.description || (isManualTransaction(t) ? '手动补录' : ''))}${accountingBadges(t)}</td>
     <td><select class="cat-select" data-id="${esc(t.id)}">${opts}</select>
       ${isManualTransaction(t) ? `<button type="button" class="manual-delete" data-id="${esc(t.id)}"
         aria-label="删除手动记录：${esc(t.description || '未填说明')}">删除</button>` : ''}
+      ${canAdjustTransaction(t) ? `<button type="button" class="adjust-txn" data-id="${esc(t.id)}"
+        aria-label="调整记录：${esc(t.counterparty || t.description || '未填说明')}">调整</button>` : ''}
     </td>
   </tr>`;
 }
@@ -163,12 +211,69 @@ function rowHtml(t) {
 function renderListView(rows) {
   const tbody = document.querySelector('#txnTable tbody');
   document.getElementById('tableEmpty').hidden = rows.length > 0;
+  document.getElementById('tableEmpty').textContent = document.getElementById('onlyNeedsReview').checked
+    ? '当前筛选下无需处理' : '还没有记录';
   tbody.innerHTML = rows.map(rowHtml).join('');
   tbody.querySelectorAll('.cat-select').forEach(sel =>
     sel.addEventListener('change', onChangeCategory));
   tbody.querySelectorAll('.manual-delete').forEach(button =>
     button.addEventListener('click', onDeleteManual));
+  tbody.querySelectorAll('.adjust-txn').forEach(button =>
+    button.addEventListener('click', onOpenAdjustment));
 }
+
+const adjustmentDialog = document.getElementById('adjustmentDialog');
+let adjustingId = null;
+
+function onOpenAdjustment(e) {
+  const record = transactions.find(t => t.id === e.currentTarget.dataset.id);
+  if (!canAdjustTransaction(record)) return;
+  adjustingId = record.id;
+  const facts = [
+    ['日期', record.datetime.replace('T', ' ')], ['来源', record.source],
+    ['原始金额', fmtMoney(record.amount)],
+    ['商户 / 说明', [record.counterparty, record.description].filter(Boolean).join(' / ') || '—'],
+    ['原始分类', record.rawCategory || '—'], ['交易状态', record.status || '—']
+  ];
+  document.getElementById('adjustmentFacts').innerHTML = facts.map(([key,value]) =>
+    `<dt>${esc(key)}</dt><dd>${esc(value)}</dd>`).join('');
+  const amount = document.getElementById('adjustmentAmount');
+  amount.max = String(record.amount);
+  amount.value = String(isValidCountedAmount(record.countedAmount, record.amount) ? record.countedAmount : record.amount);
+  document.getElementById('adjustmentRule').textContent = record.status === '交易关闭'
+    ? '交易关闭仍自动不计入统计。' : '原始账单信息保留，只调整支出统计。';
+  document.getElementById('adjustmentMsg').textContent = '';
+  adjustmentDialog.showModal();
+}
+
+async function onSaveAdjustment(action) {
+  const buttons = adjustmentDialog.querySelectorAll('button');
+  if (document.getElementById('adjustmentInclude').disabled || !adjustingId) return;
+  buttons.forEach(button => { button.disabled = true; });
+  const msg = document.getElementById('adjustmentMsg');
+  try {
+    const updated = await saveExpenseAdjustment(adjustingId, action,
+      document.getElementById('adjustmentAmount').value);
+    transactions = transactions.map(t => t.id === updated.id ? updated : t);
+    classifyAll();
+    refreshAll();
+    adjustmentDialog.close();
+    document.getElementById('adjustmentFeedback').textContent = '处理已保存，统计已更新。';
+  } catch (error) {
+    msg.textContent = error.message;
+  } finally {
+    buttons.forEach(button => { button.disabled = false; });
+  }
+}
+
+document.getElementById('adjustmentInclude').addEventListener('click', () => onSaveAdjustment('include'));
+document.getElementById('adjustmentExclude').addEventListener('click', () => onSaveAdjustment('exclude'));
+document.getElementById('adjustmentForm').addEventListener('submit', e => {
+  e.preventDefault();
+  onSaveAdjustment('amount');
+});
+document.getElementById('adjustmentClose').addEventListener('click', () => adjustmentDialog.close());
+adjustmentDialog.addEventListener('close', () => { adjustingId = null; });
 
 async function onDeleteManual(e) {
   const button = e.currentTarget;
@@ -205,15 +310,15 @@ function renderMerchantView(rows) {
       .map(t => `<li class="mc-sub-item">
         <span class="mc-sub-date">${esc(t.datetime.slice(5, 10))}</span>
         <span class="flow-badge ${directionClass(t)}">${esc(directionLabel(t.direction))}</span>
-        <span class="mc-sub-desc">${esc(t.description || t.myCategory)}</span>
-        <span class="mc-sub-amt ${directionClass(t)}">${fmtSignedMoney(t)}</span>
+        <span class="mc-sub-desc">${esc(t.description || t.myCategory)}${accountingBadges(t)}</span>
+        <span class="mc-sub-amt ${directionClass(t)}">${fmtSignedMoney(t, true)}</span>
       </li>`).join('');
     const summary = `支出 ${fmtMoney(g.expense)} · 收入 ${fmtMoney(g.income)}`;
     return `<li class="mc-group">
       <button class="mc-head" data-idx="${i}" aria-expanded="false">
         <span class="mc-icon" style="color:${color}">${iconSvg(g.items[0].myCategory, 16)}</span>
         <span class="mc-name">${esc(g.counterparty)}</span>
-        <span class="mc-count">${g.count} 笔</span>
+        <span class="mc-count">${g.count} 条</span>
         <span class="mc-flow-summary">${summary}</span>
         <span class="mc-total ${g.net >= 0 ? 'income' : 'expense'}">${fmtMoney(g.net)}</span>
         <span class="mc-caret" aria-hidden="true">▾</span>
@@ -258,7 +363,7 @@ function populateCategoryFilter() {
     CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('');
   sel.value = cur;
 }
-['filterSource', 'filterCategory', 'filterDirection', 'onlyUncat'].forEach(id =>
+['filterSource', 'filterCategory', 'filterDirection', 'onlyUncat', 'onlyNeedsReview'].forEach(id =>
   document.getElementById(id).addEventListener('change', renderDetail));
 document.getElementById('searchInput').addEventListener('input', renderDetail);
 document.getElementById('detailTimeChip').addEventListener('click', () => {
@@ -280,9 +385,9 @@ function fmtMoney(n) {
   return '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function fmtSignedMoney(t) {
+function fmtSignedMoney(t, counted = false) {
   const sign = t.direction === '收入' ? '+' : t.direction === '支出' ? '-' : '';
-  return sign + fmtMoney(t.amount);
+  return sign + fmtMoney(counted && t.direction === '支出' ? countedExpenseAmount(t) : t.amount);
 }
 
 function directionLabel(direction) {
@@ -359,8 +464,9 @@ function renderTopList(topExpenses) {
       <span class="top-main">
         <span class="top-name">${esc(t.counterparty || t.description || '—')}</span>
         <span class="top-meta">${esc(t.datetime.slice(5, 10))} · ${esc(t.myCategory)} · ${esc(t.source)}</span>
+        ${accountingBadges(t)}
       </span>
-      <span class="top-amt">${fmtMoney(t.amount)}</span>
+      <span class="top-amt">${fmtMoney(countedExpenseAmount(t))}</span>
     </li>`;
   }).join('');
 }
@@ -426,6 +532,7 @@ document.getElementById('allRange').addEventListener('click', () => {
   refreshAll();
 });
 function refreshAll() {
+  refreshReviewNotice();
   document.getElementById('monthPick').value = range.start ? range.label : '';
   populateCategoryFilter();
   renderDetail();

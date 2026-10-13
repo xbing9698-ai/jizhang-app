@@ -1,5 +1,6 @@
 import { isCountableExpense } from './dedup.js';
 import { billingPeriodLabel, filterTransactionsByRange } from './period.js';
+import { countedExpenseAmount } from './review.js';
 
 export function filterTransactionsBySource(transactions, source = '') {
   return transactions.filter(t => !source || t.source === source);
@@ -11,19 +12,20 @@ export function summarize(transactions, range) {
   const expenses = [];
   for (const t of filterTransactionsByRange(transactions, range)) {
     if (isCountableExpense(t)) {
-      s.totalExpense += t.amount;
+      const amount = countedExpenseAmount(t);
+      s.totalExpense += amount;
       s.count += 1;
       const cat = t.myCategory || '其他';
-      s.byCategory[cat] = (s.byCategory[cat] || 0) + t.amount;
+      s.byCategory[cat] = (s.byCategory[cat] || 0) + amount;
       const day = t.datetime.slice(0, 10);
-      s.byDay[day] = (s.byDay[day] || 0) + t.amount;
+      s.byDay[day] = (s.byDay[day] || 0) + amount;
       expenses.push(t);
     } else if (t.direction === '收入') {
       s.totalIncome += t.amount;
     }
   }
   // 大额支出 Top5（金额降序）
-  s.topExpenses = expenses.sort((a, b) => b.amount - a.amount).slice(0, 5);
+  s.topExpenses = expenses.sort((a, b) => countedExpenseAmount(b) - countedExpenseAmount(a)).slice(0, 5);
   // 浮点修正
   s.totalExpense = Math.round(s.totalExpense * 100) / 100;
   s.totalIncome = Math.round(s.totalIncome * 100) / 100;
@@ -59,7 +61,7 @@ export function groupByCounterparty(transactions, range) {
     });
     const g = map.get(key);
     if (isCountableExpense(t)) {
-      g.expense += t.amount;
+      g.expense += countedExpenseAmount(t);
       g.expenseCount += 1;
     } else if (t.direction === '收入') {
       g.income += t.amount;
@@ -95,7 +97,7 @@ export function buildPeriodTable(transactions) {
     });
     const row = map.get(period);
     if (isCountableExpense(t)) {
-      row.expense += t.amount;
+      row.expense += countedExpenseAmount(t);
       row.expenseCount += 1;
     } else if (t.direction === '收入') {
       row.income += t.amount;

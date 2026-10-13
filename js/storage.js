@@ -1,4 +1,5 @@
 import { isManualTransaction } from './manual.js';
+import { adjustTransaction } from './review.js';
 
 const DB_NAME = 'jizhang', STORE_TXN = 'transactions', STORE_MEM = 'merchantMemory';
 
@@ -52,6 +53,29 @@ export async function deleteManualTransaction(id) {
     tx.oncomplete = resolve;
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(refusal || tx.error || new Error('删除未完成'));
+  });
+}
+
+// 从实际存储的记录生成单笔调整，避免覆盖原始字段或并发更新的其他信息。
+export async function saveExpenseAdjustment(id, action, amount) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_TXN, 'readwrite');
+    const store = tx.objectStore(STORE_TXN);
+    let updated, failure;
+    const req = store.get(id);
+    req.onsuccess = () => {
+      try {
+        updated = adjustTransaction(req.result, action, amount);
+        store.put(updated);
+      } catch (error) {
+        failure = error;
+        tx.abort();
+      }
+    };
+    tx.oncomplete = () => resolve(updated);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(failure || tx.error || new Error('调整未完成'));
   });
 }
 

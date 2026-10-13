@@ -22,5 +22,5 @@ export function mergeTransactions(existing, incoming) {
 }
 
 export function isCountableExpense(t) {
-  return t.direction === '支出' && t.status !== '交易关闭';
+  return t.direction === '支出' && t.status !== '交易关闭' && t.excluded !== true;
 }

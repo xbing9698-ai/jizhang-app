@@ -127,10 +127,12 @@
           <option value="中性">只看中性</option>
         </select>
         <label class="check"><input type="checkbox" id="onlyUncat">只看未分类</label>
+        <label class="check"><input type="checkbox" id="onlyNeedsReview">只看需处理</label>
         <span class="count-badge" id="detailCount">0 条</span>
       </div>
       <button class="time-chip" id="detailTimeChip" hidden></button>
       <p class="import-msg" id="manualDeleteMsg" role="status" aria-live="polite"></p>
+      <p class="import-msg" id="adjustmentFeedback" role="status" aria-live="polite"></p>
       <div class="seg-toggle" id="viewToggle" role="tablist">
         <button class="seg active" data-mode="list" role="tab">明细列表</button>
         <button class="seg" data-mode="merchant" role="tab">按商户汇总</button>
@@ -159,6 +161,7 @@
           <span class="file-drop-text">点击选择账单文件</span>
         </label>
         <p class="import-msg" id="importMsg"></p>
+        <button type="button" class="btn btn-secondary" id="reviewPending" title="查看全部时间的需处理记录" hidden>查看需处理</button>
       </div>
 
       <details class="card manual-card">
@@ -194,6 +197,23 @@
       </div>
     </section>
   </main>
+
+  <dialog id="adjustmentDialog" class="adjustment-dialog" aria-labelledby="adjustmentTitle">
+    <h2 id="adjustmentTitle">调整支出统计</h2>
+    <dl id="adjustmentFacts" class="adjustment-facts"></dl>
+    <p id="adjustmentRule" class="card-desc"></p>
+    <div class="btn-row">
+      <button type="button" class="btn btn-secondary" id="adjustmentInclude">正常计入</button>
+      <button type="button" class="btn btn-secondary" id="adjustmentExclude">不计入统计</button>
+    </div>
+    <form id="adjustmentForm" class="adjustment-form" novalidate>
+      <label for="adjustmentAmount">实际计入金额（元）</label>
+      <input type="number" id="adjustmentAmount" inputmode="decimal" min="0.01" step="0.01" required>
+      <button type="submit" class="btn btn-primary" id="adjustmentSave">保存计入金额</button>
+    </form>
+    <p id="adjustmentMsg" class="import-msg error" role="status" aria-live="polite"></p>
+    <button type="button" class="btn btn-secondary" id="adjustmentClose">关闭</button>
+  </dialog>
 
   <script type="module" src="js/app.js"></script>
 </body>
