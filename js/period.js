@@ -19,8 +19,33 @@ export function latestCompletedPeriod(now = new Date()) {
 }
 
 export function prevPeriodRange(range) {
-  if (!range?.end) return null;
+  if (!range?.end || range.mode === 'custom' || range.mode === 'all') return null;
+  const expected = billingPeriodRange(range.end.slice(0, 7));
+  if (range.start !== expected.start || range.end !== expected.end) return null;
   return billingPeriodRange(shiftMonth(range.end.slice(0, 7), -1));
+}
+
+export function currentBillingPeriod(now = new Date()) {
+  const date = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  return billingPeriodRange(billingPeriodLabel(date));
+}
+
+export function customDateRange(start, end) {
+  if (typeof start !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(start) || !billingPeriodLabel(start))
+    throw new Error('请选择有效的开始日期');
+  if (typeof end !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(end) || !billingPeriodLabel(end))
+    throw new Error('请选择有效的结束日期');
+  if (start > end) throw new Error('开始日期不能晚于结束日期');
+  return { start, end, label:'自定义', mode:'custom' };
+}
+
+export function allTimeRange() {
+  return { start:null, end:null, label:'全部', mode:'all' };
+}
+
+export function rangeText(range) {
+  if (!range?.start) return '全部时间';
+  return `${range.start.replaceAll('-', '.')} — ${range.end.replaceAll('-', '.')}`;
 }
 
 // 直接使用账单本地日期，避免把交易时间转成 UTC 后跨日。

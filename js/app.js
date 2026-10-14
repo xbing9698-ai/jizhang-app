@@ -1,28 +1,27 @@
 import { fileToTransactions } from './import-transactions.js';
 import { mergeTransactions } from './dedup.js';
-import { classify, resolveCategory, CATEGORIES } from './classify.js';
+import { resolveCategory, CATEGORIES, INCOME_CATEGORIES, transactionCategories } from './classify.js';
 import {
   summarize,
-  filterTransactionsBySource,
-  matchesSearch,
   groupByCounterparty,
   buildPeriodTable
 } from './aggregate.js';
-import { billingPeriodRange, latestCompletedPeriod, prevPeriodRange, filterTransactionsByRange, billingPeriodLabel } from './period.js';
+import { billingPeriodRange, currentBillingPeriod, customDateRange, allTimeRange, rangeText, prevPeriodRange, filterTransactionsByRange, billingPeriodLabel } from './period.js';
 import { renderCategoryPie, renderTrend, colorForCategory } from './charts.js';
 import { iconSvg } from './icons.js';
 import { isManualTransaction } from './manual.js';
-import { newQuickEntry, keypadAmount, createQuickExpense } from './quick-entry.js';
+import { filterDetails, sortTransactions } from './detail.js';
+import { newQuickEntry, keypadAmount, createQuickTransaction, setQuickDirection } from './quick-entry.js';
 import { countedExpenseAmount, isValidCountedAmount, canAdjustTransaction, needsReview, filterNeedsReview } from './review.js';
 import {
-  saveTransactions, loadAllTransactions, saveMemory, loadMemory,
-  clearAllData, exportBackup, importBackup, deleteManualTransaction, saveExpenseAdjustment
+  saveTransactions, loadAllTransactions, loadMemory,
+  clearAllData, exportBackup, importBackup, deleteManualTransaction, saveExpenseAdjustment, saveTransactionCategory
 } from './storage.js';
 
 // ===== 状态 =====
 let transactions = [];
 let memory = {};
-let range = latestCompletedPeriod();
+let range = currentBillingPeriod();
 let lastImport = null;
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c =>
@@ -39,6 +38,7 @@ function switchView(name) {
   document.querySelectorAll('.view').forEach(v =>
     v.classList.toggle('active', v.id === `view-${name}`));
   if (name === 'detail') renderDetail();
+  window.scrollTo(0, 0);
 }
 document.getElementById('tabs').addEventListener('click', e => {
   if (e.target.classList.contains('tab')) switchView(e.target.dataset.view);
@@ -47,6 +47,7 @@ document.getElementById('tabs').addEventListener('click', e => {
 // ===== 导入 =====
 async function onFiles(files) {
   const msg = document.getElementById('importMsg');
+  document.getElementById('quickFeedback').textContent = '';
   msg.className = 'import-msg';
   try {
     let incoming = [];
@@ -57,6 +58,8 @@ async function onFiles(files) {
     await saveTransactions(transactions);
     lastImport = { added, skipped };
     refreshAll();
+    if (!filterNeedsReview(transactions).length)
+      document.getElementById('quickFeedback').textContent = `已导入：新增 ${added} 条，重复跳过 ${skipped} 条。`;
     switchView(filterNeedsReview(transactions).length ? 'import' : 'overview');
   } catch (err) {
     lastImport = null;
@@ -64,18 +67,23 @@ async function onFiles(files) {
     msg.classList.add('error');
   }
 }
-document.getElementById('fileInput').addEventListener('change', e => onFiles(e.target.files));
+document.getElementById('fileInput').addEventListener('change', e => {
+  const files = Array.from(e.target.files);
+  e.target.value = ''; // 允许再次选择完全相同的账单。
+  if (files.length) onFiles(files);
+});
 
 // ===== 首页与导入页共用的快速支出记账 =====
 const quickDialog = document.getElementById('quickEntryDialog');
 const quickCategories = document.getElementById('quickCategories');
 let quickDraft = newQuickEntry();
 let quickSaving = false;
-quickCategories.innerHTML = CATEGORIES.map(cat =>
-  '<button type="button" class="quick-category" data-category="' + esc(cat) + '" aria-pressed="false">' +
-  iconSvg(cat, 20) + '<span>' + esc(cat) + '</span></button>').join('');
 
 function renderQuickEntry() {
+  const direction = quickDraft.direction || '支出';
+  document.querySelectorAll('#quickDirection button').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.direction === direction)));
+  const categories = direction === '收入' ? INCOME_CATEGORIES : CATEGORIES;
+  quickCategories.innerHTML = categories.map(cat => '<button type="button" class="quick-category" data-category="' + esc(cat) + '" aria-pressed="false">' + iconSvg(direction === '收入' ? '转账' : cat, 20) + '<span>' + esc(cat) + '</span></button>').join('');
   document.getElementById('quickAmount').textContent = quickDraft.amount || '0.00';
   quickCategories.querySelectorAll('button').forEach(button => {
     const selected = button.dataset.category === quickDraft.category;
@@ -95,6 +103,12 @@ function openQuickEntry() {
 }
 ['quickEntryOpen', 'quickEntryImportOpen'].forEach(id =>
   document.getElementById(id).addEventListener('click', openQuickEntry));
+document.getElementById('quickDirection').addEventListener('click', e => {
+  const button = e.target.closest('[data-direction]');
+  if (!button || quickSaving || button.dataset.direction === (quickDraft.direction || '支出')) return;
+  quickDraft = setQuickDirection(quickDraft, button.dataset.direction);
+  renderQuickEntry();
+});
 quickCategories.addEventListener('click', e => {
   const button = e.target.closest('[data-category]');
   if (!button || quickSaving) return;
@@ -128,7 +142,7 @@ document.getElementById('quickDone').addEventListener('click', async () => {
   quickSaving = true;
   quickDialog.querySelectorAll('button,input').forEach(control => { control.disabled = true; });
   try {
-    const record = createQuickExpense({ ...quickDraft,
+    const record = createQuickTransaction({ ...quickDraft,
       date: document.getElementById('quickDate').value,
       text: document.getElementById('quickText').value });
     await saveTransactions([record]);
@@ -136,7 +150,7 @@ document.getElementById('quickDone').addEventListener('click', async () => {
     refreshAll(); // 保留所查看的账期与页面。
     quickDialog.close();
     document.getElementById('quickFeedback').textContent =
-      '已记一笔：' + record.myCategory + ' ' + fmtMoney(record.amount) +
+      '已记一笔' + record.direction + '：' + record.myCategory + ' ' + fmtMoney(record.amount) +
       '（账期 ' + billingPeriodLabel(record.datetime) + '）。';
   } catch (err) {
     msg.textContent = '未保存：' + err.message;
@@ -163,7 +177,7 @@ function refreshReviewNotice() {
 }
 
 document.getElementById('reviewPending').addEventListener('click', () => {
-  range = { start:null, end:null, label:'全部' };
+  range = allTimeRange();
   document.getElementById('onlyNeedsReview').checked = true;
   document.getElementById('filterSource').value = '';
   document.getElementById('filterCategory').value = '';
@@ -178,18 +192,15 @@ document.getElementById('reviewPending').addEventListener('click', () => {
 });
 
 function filteredTransactions() {
-  const src = document.getElementById('filterSource').value;
-  const cat = document.getElementById('filterCategory').value;
-  const dir = document.getElementById('filterDirection').value;
-  const onlyUncat = document.getElementById('onlyUncat').checked;
-  const query = document.getElementById('searchInput').value;
-  // 明细、分类下钻及商户汇总共用概览账期；全部时间时解除日期限制。
-  return filterTransactionsBySource(filterTransactionsByRange(transactions, range), src).filter(t =>
-    (!cat || t.myCategory === cat) &&
-    (!dir || t.direction === dir) &&
-    (!onlyUncat || t.myCategory === '其他') &&
-    (!document.getElementById('onlyNeedsReview').checked || needsReview(t)) &&
-    matchesSearch(t, query));
+  return filterDetails(transactions, range, {
+    source:document.getElementById('filterSource').value,
+    category:document.getElementById('filterCategory').value,
+    direction:document.getElementById('filterDirection').value,
+    onlyUncat:document.getElementById('onlyUncat').checked,
+    onlyNeedsReview:document.getElementById('onlyNeedsReview').checked,
+    query:document.getElementById('searchInput').value,
+    order:document.getElementById('sortOrder').value
+  });
 }
 
 // 明细页明确展示账期结束月及实际起止日期，并可一键看全部。
@@ -198,8 +209,8 @@ function updateDetailTimeChip() {
   if (!chip) return;
   if (range.start) {
     chip.hidden = false;
-    chip.innerHTML = `账期 ${range.label}（${range.start} ～ ${range.end}） <span class="x" aria-hidden="true">✕</span>`;
-    chip.setAttribute('aria-label', `当前只显示账期 ${range.label}，${range.start} 至 ${range.end}，点击查看全部时间`);
+    chip.innerHTML = esc(rangeText(range)) + ' <span class="x" aria-hidden="true">×</span>';
+    chip.setAttribute('aria-label', `当前显示 ${range.start} 至 ${range.end}，点击查看全部时间`);
   } else {
     chip.hidden = true;
   }
@@ -207,7 +218,8 @@ function updateDetailTimeChip() {
 
 function renderDetail() {
   updateDetailTimeChip();
-  const rows = filteredTransactions().sort((a, b) => b.datetime.localeCompare(a.datetime));
+  const rows = filteredTransactions();
+  updateFilterButton();
   document.getElementById('detailCount').textContent = `${rows.length} 条`;
   document.getElementById('listView').hidden = detailMode !== 'list';
   document.getElementById('merchantView').hidden = detailMode !== 'merchant';
@@ -231,38 +243,22 @@ function accountingBadges(t) {
 }
 
 function rowHtml(t) {
-  const opts = CATEGORIES.map(c =>
-    `<option value="${c}"${c === t.myCategory ? ' selected' : ''}>${c}</option>`).join('');
-  const hl = t.myCategory === '其他' ? ' class="hl"' : '';
-  const dirClass = directionClass(t);
-  return `<tr${hl}>
-    <td>${esc(t.datetime.replace('T', ' ').slice(5))}</td>
-    <td>${esc(t.source)}</td>
-    <td><span class="flow-badge ${dirClass}">${esc(directionLabel(t.direction))}</span></td>
-    <td class="num amount-cell ${dirClass}">${fmtSignedMoney(t)}</td>
-    <td>${esc(t.counterparty)}</td>
-    <td>${esc(t.description || (isManualTransaction(t) ? '手动记账' : ''))}${accountingBadges(t)}</td>
-    <td><select class="cat-select" data-id="${esc(t.id)}">${opts}</select>
-      ${isManualTransaction(t) ? `<button type="button" class="manual-delete" data-id="${esc(t.id)}"
-        aria-label="删除手动记录：${esc(t.description || '未填说明')}">删除</button>` : ''}
-      ${canAdjustTransaction(t) ? `<button type="button" class="adjust-txn" data-id="${esc(t.id)}"
-        aria-label="调整记录：${esc(t.counterparty || t.description || '未填说明')}">调整</button>` : ''}
-    </td>
-  </tr>`;
+  const title = t.counterparty || t.description || (isManualTransaction(t) ? '手动记账' : '未填写说明');
+  const cls = directionClass(t);
+  return '<button type="button" class="transaction-row" data-id="' + esc(t.id) + '" aria-label="查看交易：' + esc(title) + '">' +
+    '<span class="txn-main"><span class="txn-title">' + esc(title) + '</span>' +
+    '<span class="txn-meta">' + esc(String(t.datetime || '').replace('T',' ').slice(0,16)) + '</span>' +
+    '<span class="txn-tags">' + esc(t.myCategory || '其他') + ' · ' + esc(t.source || '') + '</span>' + accountingBadges(t) + '</span>' +
+    '<span class="txn-money ' + cls + '"><span>' + fmtSignedMoney(t) + '</span><small>' + esc(t.direction || '中性') + '</small></span></button>';
 }
 
 function renderListView(rows) {
-  const tbody = document.querySelector('#txnTable tbody');
+  const list = document.getElementById('txnList');
   document.getElementById('tableEmpty').hidden = rows.length > 0;
   document.getElementById('tableEmpty').textContent = document.getElementById('onlyNeedsReview').checked
-    ? '当前筛选下无需处理' : '还没有记录';
-  tbody.innerHTML = rows.map(rowHtml).join('');
-  tbody.querySelectorAll('.cat-select').forEach(sel =>
-    sel.addEventListener('change', onChangeCategory));
-  tbody.querySelectorAll('.manual-delete').forEach(button =>
-    button.addEventListener('click', onDeleteManual));
-  tbody.querySelectorAll('.adjust-txn').forEach(button =>
-    button.addEventListener('click', onOpenAdjustment));
+    ? '当前范围和筛选下无需处理' : '没有符合条件的记录';
+  list.innerHTML = rows.map(rowHtml).join('');
+  list.querySelectorAll('.transaction-row').forEach(button => button.addEventListener('click', onOpenAdjustment));
 }
 
 const adjustmentDialog = document.getElementById('adjustmentDialog');
@@ -270,23 +266,33 @@ let adjustingId = null;
 
 function onOpenAdjustment(e) {
   const record = transactions.find(t => t.id === e.currentTarget.dataset.id);
-  if (!canAdjustTransaction(record)) return;
+  if (!record) return;
   adjustingId = record.id;
   const facts = [
-    ['日期', record.datetime.replace('T', ' ')], ['来源', record.source],
+    ['日期', String(record.datetime || '').replace('T', ' ')], ['来源', record.source],
     ['原始金额', fmtMoney(record.amount)],
     ['商户 / 说明', [record.counterparty, record.description].filter(Boolean).join(' / ') || '—'],
     ['原始分类', record.rawCategory || '—'], ['交易状态', record.status || '—']
   ];
   document.getElementById('adjustmentFacts').innerHTML = facts.map(([key,value]) =>
     `<dt>${esc(key)}</dt><dd>${esc(value)}</dd>`).join('');
+  const choices = transactionCategories(record);
+  const current = record.myCategory || '其他';
+  const options = choices.includes(current) ? choices : [current,...choices];
+  document.getElementById('transactionCategory').innerHTML = options.map(cat => '<option value="' + esc(cat) + '"' + (cat === current ? ' selected' : '') + '>' + esc(cat) + '</option>').join('');
+  document.getElementById('categoryMsg').textContent = '';
+  document.getElementById('adjustmentControls').hidden = !canAdjustTransaction(record);
+  document.getElementById('adjustmentControls').open = false;
+  document.getElementById('transactionDelete').hidden = !isManualTransaction(record);
+  document.getElementById('transactionDelete').dataset.id = record.id;
+
   const amount = document.getElementById('adjustmentAmount');
   amount.max = String(record.amount);
   amount.value = String(isValidCountedAmount(record.countedAmount, record.amount) ? record.countedAmount : record.amount);
   document.getElementById('adjustmentRule').textContent = record.status === '交易关闭'
     ? '交易关闭仍自动不计入统计。' : '原始账单信息保留，只调整支出统计。';
   document.getElementById('adjustmentMsg').textContent = '';
-  adjustmentDialog.showModal();
+  if (!adjustmentDialog.open) adjustmentDialog.showModal();
 }
 
 async function onSaveAdjustment(action) {
@@ -315,7 +321,12 @@ document.getElementById('adjustmentForm').addEventListener('submit', e => {
   e.preventDefault();
   onSaveAdjustment('amount');
 });
-document.getElementById('adjustmentClose').addEventListener('click', () => adjustmentDialog.close());
+document.getElementById('adjustmentClose').addEventListener('click', () => {
+  if (!document.getElementById('saveCategory').disabled) adjustmentDialog.close();
+});
+adjustmentDialog.addEventListener('cancel', e => { if (document.getElementById('saveCategory').disabled) e.preventDefault(); });
+document.getElementById('saveCategory').addEventListener('click', onChangeCategory);
+document.getElementById('transactionDelete').addEventListener('click', onDeleteManual);
 adjustmentDialog.addEventListener('close', () => { adjustingId = null; });
 
 async function onDeleteManual(e) {
@@ -331,11 +342,13 @@ async function onDeleteManual(e) {
     await deleteManualTransaction(id);
     transactions = transactions.filter(t => t.id !== id);
     refreshAll();
+    adjustmentDialog.close();
     msg.textContent = '手动记录已删除，统计已更新。';
     msg.classList.add('ok');
   } catch (err) {
     msg.textContent = '删除失败：' + err.message;
     msg.classList.add('error');
+  } finally {
     button.disabled = false;
   }
 }
@@ -349,13 +362,13 @@ function renderMerchantView(rows) {
   }
   ul.innerHTML = groups.map((g, i) => {
     const color = colorForCategory(g.items[0].myCategory);
-    const sub = g.items.slice().sort((a, b) => b.datetime.localeCompare(a.datetime))
-      .map(t => `<li class="mc-sub-item">
+    const sub = sortTransactions(g.items, document.getElementById('sortOrder').value)
+      .map(t => `<li><button type="button" class="mc-sub-item" data-id="${esc(t.id)}">
         <span class="mc-sub-date">${esc(t.datetime.slice(5, 10))}</span>
         <span class="flow-badge ${directionClass(t)}">${esc(directionLabel(t.direction))}</span>
         <span class="mc-sub-desc">${esc(t.description || t.myCategory)}${accountingBadges(t)}</span>
         <span class="mc-sub-amt ${directionClass(t)}">${fmtSignedMoney(t, true)}</span>
-      </li>`).join('');
+      </button></li>`).join('');
     const summary = `支出 ${fmtMoney(g.expense)} · 收入 ${fmtMoney(g.income)}`;
     return `<li class="mc-group">
       <button class="mc-head" data-idx="${i}" aria-expanded="false">
@@ -363,12 +376,13 @@ function renderMerchantView(rows) {
         <span class="mc-name">${esc(g.counterparty)}</span>
         <span class="mc-count">${g.count} 条</span>
         <span class="mc-flow-summary">${summary}</span>
-        <span class="mc-total ${g.net >= 0 ? 'income' : 'expense'}">${fmtMoney(g.net)}</span>
+        <span class="mc-total">${g.expense ? '支出 ' + fmtMoney(g.expense) : g.income ? '收入 ' + fmtMoney(g.income) : '不计收支'}</span>
         <span class="mc-caret" aria-hidden="true">▾</span>
       </button>
       <ul class="mc-sub" hidden>${sub}</ul>
     </li>`;
   }).join('');
+  ul.querySelectorAll('.mc-sub-item').forEach(button => button.addEventListener('click', onOpenAdjustment));
   ul.querySelectorAll('.mc-head').forEach(btn => btn.addEventListener('click', () => {
     const sub = btn.nextElementSibling;
     const open = !sub.hidden;
@@ -378,40 +392,59 @@ function renderMerchantView(rows) {
   }));
 }
 
-async function onChangeCategory(e) {
-  const id = e.target.dataset.id, cat = e.target.value;
-  const t = transactions.find(x => x.id === id);
-  if (!t) return;
-  const cp = t.counterparty;
-  const realMerchant = cp && cp !== '/';   // 真实商户名才适合做"记忆"与批量联动
-  const touched = [];
-  if (realMerchant && !isManualTransaction(t)) {
-    // 真实商户：记住该商户，同商户记录全部联动
-    memory[cp] = cat;
-    await saveMemory(cp, cat);
-    for (const o of transactions)
-      if (o.counterparty === cp && !isManualTransaction(o)) { o.myCategory = cat; o.manual = true; touched.push(o); }
-  } else {
-    // 手动记账或无对方：只改这一笔，保留其他手动记录各自选择的分类。
-    t.myCategory = cat; t.manual = true; touched.push(t);
-  }
-  await saveTransactions(touched);
-  refreshAll();
+async function onChangeCategory() {
+  if (!adjustingId || document.getElementById('saveCategory').disabled) return;
+  const controls = adjustmentDialog.querySelectorAll('button,select,input');
+  controls.forEach(control => { control.disabled = true; });
+  try {
+    const plan = await saveTransactionCategory(adjustingId, document.getElementById('transactionCategory').value);
+    const changed = new Map(plan.touched.map(t => [t.id,t]));
+    transactions = transactions.map(t => changed.get(t.id) || t);
+    if (plan.memoryEntry) memory[plan.memoryEntry.counterparty] = plan.memoryEntry.category;
+    classifyAll();
+    refreshAll();
+    adjustmentDialog.close();
+    document.getElementById('adjustmentFeedback').textContent = '分类已保存。';
+  } catch (error) { document.getElementById('categoryMsg').textContent = error.message; }
+  finally { controls.forEach(control => { control.disabled = false; }); }
 }
 
 function populateCategoryFilter() {
   const sel = document.getElementById('filterCategory');
   const cur = sel.value;
   sel.innerHTML = '<option value="">全部分类</option>' +
-    CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('');
+    [...new Set([...CATEGORIES,...INCOME_CATEGORIES,...transactions.map(t => t.myCategory).filter(Boolean)])].map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
   sel.value = cur;
 }
 ['filterSource', 'filterCategory', 'filterDirection', 'onlyUncat', 'onlyNeedsReview'].forEach(id =>
   document.getElementById(id).addEventListener('change', renderDetail));
 document.getElementById('searchInput').addEventListener('input', renderDetail);
+document.getElementById('sortOrder').addEventListener('change', renderDetail);
+const filterDialog = document.getElementById('filterDialog');
+document.getElementById('filterOpen').addEventListener('click', () => filterDialog.showModal());
+['filterApply','filterClose'].forEach(id => document.getElementById(id).addEventListener('click', () => filterDialog.close()));
+document.getElementById('filterReset').addEventListener('click', () => {
+  ['filterSource','filterCategory','filterDirection'].forEach(id => { document.getElementById(id).value = ''; });
+  ['onlyUncat','onlyNeedsReview'].forEach(id => { document.getElementById(id).checked = false; });
+  renderDetail();
+});
+function updateFilterButton() {
+  const count = ['filterSource','filterCategory','filterDirection'].filter(id => document.getElementById(id).value).length +
+    ['onlyUncat','onlyNeedsReview'].filter(id => document.getElementById(id).checked).length;
+  document.getElementById('filterOpen').textContent = count ? '筛选 · ' + count : '筛选';
+}
+document.getElementById('overviewDetail').addEventListener('click', () => {
+  ['filterSource','filterCategory','filterDirection'].forEach(id => { document.getElementById(id).value = ''; });
+  ['onlyUncat','onlyNeedsReview'].forEach(id => { document.getElementById(id).checked = false; });
+  document.getElementById('searchInput').value = '';
+  detailMode = 'list';
+  document.querySelectorAll('#viewToggle .seg').forEach(button => button.classList.toggle('active', button.dataset.mode === 'list'));
+  switchView('detail');
+});
+
 document.getElementById('detailTimeChip').addEventListener('click', () => {
   // 一键解除时间限制：看全部时间（与概览"全部"一致）
-  range = { start: null, end: null, label: '全部' };
+  range = allTimeRange();
   refreshAll();
 });
 document.getElementById('viewToggle').addEventListener('click', e => {
@@ -447,7 +480,7 @@ function directionClass(t) {
 
 // 环比变化文字（本期 vs 上期），返回 {text, cls}
 function deltaInfo(cur, prev) {
-  if (prev == null || range.label === '全部') return { text: '', cls: '' };
+  if (prev == null || range.label === '全部' || range.mode === 'custom') return { text: '', cls: '' };
   if (prev === 0) return cur > 0 ? { text: '较上一账期新增', cls: 'up' } : { text: '', cls: '' };
   const pct = (cur - prev) / prev * 100;
   const arrow = pct > 0 ? '↑' : pct < 0 ? '↓' : '';
@@ -457,7 +490,7 @@ function deltaInfo(cur, prev) {
 
 function drillToCategory(cat) {
   document.getElementById('filterSource').value = '';
-  document.getElementById('filterDirection').value = '';
+  document.getElementById('filterDirection').value = '支出';
   document.getElementById('onlyUncat').checked = false;
   document.getElementById('onlyNeedsReview').checked = false;
   document.getElementById('filterCategory').value = cat;
@@ -517,16 +550,11 @@ function renderTopList(topExpenses) {
 }
 
 function renderPeriodTable() {
-  const rows = buildPeriodTable(transactions);
-  const tbody = document.querySelector('#periodTable tbody');
+  const rows = buildPeriodTable(filterTransactionsByRange(transactions, range));
   document.getElementById('periodEmpty').hidden = rows.length > 0;
-  tbody.innerHTML = rows.map(r => `<tr>
-    <td>${esc(r.period)}</td>
-    <td class="num expense">${fmtMoney(r.expense)}</td>
-    <td class="num income">${fmtMoney(r.income)}</td>
-    <td class="num ${r.net >= 0 ? 'income' : 'expense'}">${fmtMoney(r.net)}</td>
-    <td>${r.expenseCount} 出 / ${r.incomeCount} 入</td>
-  </tr>`).join('');
+  document.getElementById('periodRows').innerHTML = rows.map(r => '<div class="period-row">' +
+    '<div class="period-title"><strong>' + esc(r.period) + '</strong><span>' + r.expenseCount + ' 笔支出 · ' + r.incomeCount + ' 笔收入</span></div>' +
+    '<div class="period-values"><span>支出 <b>' + fmtMoney(r.expense) + '</b></span><span>收入 <b>' + fmtMoney(r.income) + '</b></span><span>结余 <b>' + fmtMoney(r.net) + '</b></span></div></div>').join('');
 }
 
 function refreshDashboard() {
@@ -537,8 +565,7 @@ function refreshDashboard() {
   document.getElementById('sumExpense').textContent = fmtMoney(s.totalExpense);
   document.getElementById('sumIncome').textContent = fmtMoney(s.totalIncome);
   document.getElementById('sumNet').textContent = fmtMoney(s.net);
-  document.getElementById('rangeLabel').textContent = range.label === '全部'
-    ? '全部时间' : `账期 ${range.label} · ${range.start} ～ ${range.end}`;
+  document.getElementById('rangeLabel').textContent = rangeText(range);
   document.getElementById('expenseCount').textContent = s.count ? `${s.count} 笔` : '';
 
   const ed = deltaInfo(s.totalExpense, prev ? prev.totalExpense : null);
@@ -547,9 +574,10 @@ function refreshDashboard() {
   const iEl = document.getElementById('incomeDelta');
   eEl.textContent = ed.text; eEl.className = 'kpi-delta ' + ed.cls;
   iEl.textContent = idd.text; iEl.className = 'kpi-delta ' + idd.cls;
-  document.getElementById('netSub').textContent = s.net >= 0 ? '本期结余' : '本期超支';
+  document.getElementById('netSub').textContent = s.net >= 0 ? '收入减支出' : '支出多于收入';
 
   const hasData = Object.keys(s.byCategory).length > 0;
+  document.querySelector('.pie-wrap').hidden = !hasData;
   document.getElementById('pieEmpty').hidden = hasData;
   document.getElementById('pieChart').style.display = hasData ? '' : 'none';
   document.getElementById('pieCenter').hidden = !hasData;
@@ -573,12 +601,32 @@ document.getElementById('monthPick').addEventListener('change', e => {
   refreshAll();
 });
 document.getElementById('allRange').addEventListener('click', () => {
-  range = { start: null, end: null, label: '全部' };
+  range = allTimeRange();
   refreshAll();
+});
+const customDialog = document.getElementById('customRangeDialog');
+document.getElementById('billingRange').addEventListener('click', () => { range = currentBillingPeriod(); refreshAll(); });
+document.getElementById('customRangeOpen').addEventListener('click', () => {
+  const initial = range.start ? range : currentBillingPeriod();
+  document.getElementById('customStart').value = initial.start;
+  document.getElementById('customEnd').value = initial.end;
+  document.getElementById('customRangeMsg').textContent = '';
+  customDialog.showModal();
+});
+document.getElementById('customRangeClose').addEventListener('click', () => customDialog.close());
+document.getElementById('customRangeForm').addEventListener('submit', e => {
+  e.preventDefault();
+  try {
+    range = customDateRange(document.getElementById('customStart').value, document.getElementById('customEnd').value);
+    refreshAll(); customDialog.close();
+  } catch (error) { document.getElementById('customRangeMsg').textContent = error.message; }
 });
 function refreshAll() {
   refreshReviewNotice();
-  document.getElementById('monthPick').value = range.start ? range.label : '';
+  const mode = !range.start ? 'all' : range.mode === 'custom' ? 'custom' : 'billing';
+  document.getElementById('monthPick').value = mode === 'billing' ? range.label : '';
+  document.getElementById('billingMonthWrap').hidden = mode !== 'billing';
+  for (const [id,value] of [['billingRange','billing'],['customRangeOpen','custom'],['allRange','all']]) document.getElementById(id).setAttribute('aria-pressed', String(mode === value));
   populateCategoryFilter();
   renderDetail();
   refreshDashboard();
@@ -587,15 +635,30 @@ function refreshAll() {
 // ===== 备份 / 清空 =====
 document.getElementById('exportBtn').addEventListener('click', exportBackup);
 document.getElementById('importBackup').addEventListener('change', async e => {
-  if (!e.target.files[0]) return;
-  await importBackup(e.target.files[0]);
-  memory = await loadMemory();
-  transactions = await loadAllTransactions();
-  classifyAll();
-  await saveTransactions(transactions);
-  refreshAll();
-  switchView('overview');
+  const file = e.target.files[0];
+  e.target.value = ''; // 清空后选择同一个备份也必须触发恢复。
+  if (!file) return;
+  const msg = document.getElementById('backupMsg');
+  msg.className = 'import-msg';
+  msg.textContent = '正在恢复备份…';
+  document.getElementById('quickFeedback').textContent = '';
+  try {
+    await importBackup(file);
+    memory = await loadMemory();
+    transactions = await loadAllTransactions();
+    classifyAll();
+    await saveTransactions(transactions);
+    refreshAll();
+    switchView('overview');
+    msg.className = 'import-msg ok';
+    msg.textContent = '备份已恢复。';
+    document.getElementById('quickFeedback').textContent = `备份已恢复：${transactions.length}条记录。`;
+  } catch (error) {
+    msg.className = 'import-msg error';
+    msg.textContent = '恢复失败：' + error.message;
+  }
 });
+
 document.getElementById('clearBtn').addEventListener('click', async () => {
   if (!confirm('确定清空所有账单与商户记忆？此操作不可撤销。')) return;
   await clearAllData();

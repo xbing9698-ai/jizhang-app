@@ -1,5 +1,6 @@
 import { isManualTransaction } from './manual.js';
 import { adjustTransaction } from './review.js';
+import { categoryUpdatePlan } from './transaction-edit.js';
 
 const DB_NAME = 'jizhang', STORE_TXN = 'transactions', STORE_MEM = 'merchantMemory';
 
@@ -84,6 +85,26 @@ export async function saveMemory(counterparty, category) {
   const tx = db.transaction(STORE_MEM, 'readwrite');
   tx.objectStore(STORE_MEM).put({ counterparty, category });
   return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+}
+
+export async function saveTransactionCategory(id, category) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORE_TXN, STORE_MEM], 'readwrite');
+    const store = tx.objectStore(STORE_TXN);
+    let plan, failure;
+    const request = store.getAll();
+    request.onsuccess = () => {
+      try {
+        plan = categoryUpdatePlan(request.result, id, category);
+        for (const t of plan.touched) store.put(t);
+        if (plan.memoryEntry) tx.objectStore(STORE_MEM).put(plan.memoryEntry);
+      } catch (error) { failure = error; tx.abort(); }
+    };
+    tx.oncomplete = () => resolve(plan);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(failure || tx.error || new Error('分类保存未完成'));
+  });
 }
 
 export async function loadMemory() {

@@ -1,4 +1,4 @@
-import { CATEGORIES } from './classify.js';
+import { CATEGORIES, INCOME_CATEGORIES } from './classify.js';
 import { billingPeriodLabel } from './period.js';
 
 export function todayDate(now = new Date()) {
@@ -34,4 +34,12 @@ export function createManualExpense({ date, amount, category, text = '' }) {
     manual: true,
     status: '手动补录'
   };
+}
+
+// 共用原有日期、金额、UUID与手动记录结构；收入只使用独立的最小分类组。
+export function createManualIncome(input) {
+  if (!INCOME_CATEGORIES.includes(input.category)) throw new Error('请选择现有收入分类');
+  const record = createManualExpense({ ...input, category:'其他' });
+  return { ...record, direction:'收入', rawCategory:input.category,
+    myCategory:input.category, status:'手动记账' };
 }

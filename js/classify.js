@@ -1,5 +1,10 @@
 export const CATEGORIES = ['餐饮','交通','购物','学习教育','娱乐休闲',
   '话费通讯','生活缴费','医疗健康','转账','其他'];
+export const INCOME_CATEGORIES = ['工资','退款 / 返款','转账收入','兼职 / 其他收入','其他'];
+
+export function transactionCategories(t) {
+  return t?.source === '手动' && t.direction === '收入' ? INCOME_CATEGORIES : CATEGORIES;
+}
 
 // 支付宝原始"交易分类" -> 统一分类
 const ALIPAY_CATEGORY_MAP = {

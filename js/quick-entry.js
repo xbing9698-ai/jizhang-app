@@ -1,4 +1,4 @@
-import { createManualExpense, todayDate } from './manual.js';
+import { createManualExpense, createManualIncome, todayDate } from './manual.js';
 
 export function newQuickEntry(now = new Date()) {
   return { amount: '', category: '其他', date: todayDate(now), text: '' };
@@ -17,4 +17,18 @@ export function createQuickExpense(draft) {
   const amount = typeof draft.amount === 'string' && /^\d+\.$/.test(draft.amount)
     ? draft.amount.slice(0, -1) : draft.amount;
   return createManualExpense({ ...draft, amount });
+}
+
+export function setQuickDirection(draft, direction) {
+  if (!['支出','收入'].includes(direction)) throw new Error('请选择支出或收入');
+  return { ...draft, direction, category:'其他' };
+}
+
+export function createQuickTransaction(draft) {
+  const direction = draft.direction || '支出';
+  if (direction === '支出') return createQuickExpense(draft);
+  if (direction !== '收入') throw new Error('请选择支出或收入');
+  const amount = typeof draft.amount === 'string' && /^\d+\.$/.test(draft.amount)
+    ? draft.amount.slice(0,-1) : draft.amount;
+  return createManualIncome({ ...draft, amount });
 }

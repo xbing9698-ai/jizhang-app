@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#f4f0e6">
+  <meta name="theme-color" content="#f5f2eb">
   <title>我的记账</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="manifest" href="manifest.webmanifest">
@@ -19,29 +19,26 @@
       <span class="brand-dot"></span>
       <span class="brand-name">我的记账</span>
     </div>
-    <span class="brand-sub">THE LEDGER<br>支付宝 · 微信 合并</span>
+    <span class="brand-sub">轻松记录 · 每月复盘</span>
   </header>
 
-  <nav class="tabs" id="tabs">
-    <button class="tab active" data-view="overview">概览</button>
-    <button class="tab" data-view="detail">明细</button>
-    <button class="tab" data-view="import">导入</button>
-  </nav>
-
-  <main id="app">
+<main id="app">
     <p id="quickFeedback" class="quick-feedback" role="status" aria-live="polite"></p>
     <!-- ============ 概览 ============ -->
     <section class="view active" id="view-overview">
       <div class="range-bar">
-        <label class="range-field">
-          <span>账期结束月</span>
-          <input type="month" id="monthPick" title="上月15日～本月14日">
-        </label>
-        <button class="chip" id="allRange">全部时间</button>
-        <span class="range-label" id="rangeLabel"></span>
+        <div class="range-modes" role="group" aria-label="时间范围">
+          <button type="button" id="billingRange" aria-pressed="true">本账期</button>
+          <button type="button" id="customRangeOpen" aria-pressed="false">自定义</button>
+          <button type="button" id="allRange" aria-pressed="false">全部时间</button>
+        </div>
+        <div class="range-context">
+          <span class="range-label" id="rangeLabel"></span>
+          <label id="billingMonthWrap" class="billing-month"><span class="sr-only">选择账期</span><input type="month" id="monthPick" aria-label="选择账期"></label>
+        </div>
       </div>
 
-      <button type="button" class="btn btn-primary quick-entry-button" id="quickEntryOpen">＋ 记一笔</button>
+
 
       <div class="kpi-row">
         <div class="kpi-card kpi-expense">
@@ -61,9 +58,11 @@
         </div>
       </div>
 
+      <button type="button" class="btn btn-primary quick-entry-button" id="quickEntryOpen">＋ 记一笔</button>
+
       <div class="card">
         <div class="card-head">
-          <h2 class="card-title">钱花在哪</h2>
+          <h2 class="card-title">主要花销</h2><button type="button" class="text-button" id="overviewDetail">查看明细</button>
           <span class="card-meta" id="expenseCount"></span>
         </div>
         <div class="pie-wrap">
@@ -73,25 +72,8 @@
             <span class="pie-center-value" id="pieCenterValue">¥0</span>
           </div>
         </div>
-        <p class="empty-hint" id="pieEmpty" hidden>还没有数据，先去「导入」页加载账单吧</p>
+        <p class="empty-hint" id="pieEmpty" hidden>还没有记录，记一笔或导入账单就能看到花销。</p>
         <ul class="cat-list" id="catList"></ul>
-      </div>
-
-      <div class="card" id="periodCard">
-        <div class="card-head">
-          <h2 class="card-title">历史账期汇总</h2>
-          <span class="card-meta">上月15日～本月14日</span>
-        </div>
-        <div class="table-scroll period-table-wrap">
-          <table id="periodTable">
-            <thead><tr>
-              <th>账期（结束月）</th><th class="num">支出</th><th class="num">收入</th>
-              <th class="num">结余</th><th>笔数</th>
-            </tr></thead>
-            <tbody></tbody>
-          </table>
-          <p class="empty-hint" id="periodEmpty">还没有可统计的账单</p>
-        </div>
       </div>
 
       <div class="card" id="topCard" hidden>
@@ -103,53 +85,36 @@
         <h2 class="card-title">每日支出</h2>
         <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
       </div>
+      <details class="card history-section" id="periodCard">
+        <summary>历史账期汇总</summary>
+        <p class="section-note">当前范围内，按15日～14日账期归组</p>
+        <div id="periodRows" class="period-rows"></div>
+        <p class="empty-hint" id="periodEmpty">还没有可统计的账单</p>
+      </details>
     </section>
 
     <!-- ============ 明细 ============ -->
     <section class="view" id="view-detail">
+      <div class="page-heading"><h1>明细</h1><span class="count-badge" id="detailCount">0 条</span></div>
       <div class="search-bar">
-        <span class="search-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        </span>
-        <input type="search" id="searchInput" class="search-input" placeholder="搜索商户、备注、金额或分类…">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="search" id="searchInput" class="search-input" placeholder="搜索商户、说明、金额或分类…">
       </div>
-      <div class="filter-bar">
-        <select id="filterSource" class="select-sm">
-          <option value="">全部来源</option>
-          <option value="支付宝">支付宝</option>
-          <option value="微信">微信</option>
-          <option value="手动">手动</option>
-        </select>
-        <select id="filterCategory" class="select-sm">
-          <option value="">全部分类</option>
-        </select>
-        <select id="filterDirection" class="select-sm">
-          <option value="">全部收支</option>
-          <option value="支出">只看出账</option>
-          <option value="收入">只看入账</option>
-          <option value="中性">只看中性</option>
-        </select>
-        <label class="check"><input type="checkbox" id="onlyUncat">只看未分类</label>
-        <label class="check"><input type="checkbox" id="onlyNeedsReview">只看需处理</label>
-        <span class="count-badge" id="detailCount">0 条</span>
+      <div class="detail-toolbar">
+        <button type="button" class="btn btn-secondary" id="filterOpen">筛选</button>
+        <label class="sort-control"><span>排序</span><select id="sortOrder" aria-label="排序">
+          <option value="newest">时间：最新在前</option><option value="oldest">时间：最早在前</option>
+          <option value="highest">原金额：从高到低</option><option value="lowest">原金额：从低到高</option>
+        </select></label>
       </div>
       <button class="time-chip" id="detailTimeChip" hidden></button>
       <p class="import-msg" id="manualDeleteMsg" role="status" aria-live="polite"></p>
       <p class="import-msg" id="adjustmentFeedback" role="status" aria-live="polite"></p>
       <div class="seg-toggle" id="viewToggle" role="tablist">
-        <button class="seg active" data-mode="list" role="tab">明细列表</button>
+        <button class="seg active" data-mode="list" role="tab">交易列表</button>
         <button class="seg" data-mode="merchant" role="tab">按商户汇总</button>
       </div>
-      <div class="table-scroll" id="listView">
-        <table id="txnTable">
-          <thead><tr>
-            <th>时间</th><th>来源</th><th>收支</th><th class="num">金额</th>
-            <th>对方</th><th>说明</th><th>分类</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-        <p class="empty-hint" id="tableEmpty">还没有记录</p>
-      </div>
+      <div id="listView"><div id="txnList" class="transaction-list"></div><p class="empty-hint" id="tableEmpty">还没有记录</p></div>
       <ul class="merchant-list" id="merchantView" hidden></ul>
     </section>
 
@@ -169,7 +134,7 @@
 
       <div class="card">
         <h2 class="card-title">日常记账</h2>
-        <p class="card-desc">日常支出记一笔，每月导入账单做汇总。首页也能直接记录。</p>
+        <p class="card-desc">日常收支记一笔，每月导入账单做汇总。</p>
         <button type="button" class="btn btn-secondary" id="quickEntryImportOpen">＋ 记一笔</button>
       </div>
 
@@ -182,17 +147,46 @@
             <input type="file" id="importBackup" accept=".json" hidden></label>
           <button class="btn btn-danger" id="clearBtn">清空数据</button>
         </div>
+        <p id="backupMsg" class="import-msg" role="status" aria-live="polite"></p>
       </div>
     </section>
   </main>
+  <nav class="tabs" id="tabs" aria-label="主导航">
+    <button class="tab active" data-view="overview">首页</button>
+    <button class="tab" data-view="detail">明细</button>
+    <button class="tab" data-view="import">导入</button>
+  </nav>
+
+  <dialog id="customRangeDialog" class="sheet" aria-labelledby="customRangeTitle">
+    <div class="sheet-header"><h2 id="customRangeTitle">自定义时间</h2><button type="button" class="sheet-close" id="customRangeClose" aria-label="关闭自定义时间">×</button></div>
+    <form id="customRangeForm" class="sheet-form" novalidate>
+      <label>开始日期<input type="date" id="customStart" required></label>
+      <label>结束日期<input type="date" id="customEnd" required></label>
+      <p id="customRangeMsg" class="form-error" role="alert"></p>
+      <button type="submit" class="btn btn-primary">应用范围</button>
+    </form>
+  </dialog>
+
+  <dialog id="filterDialog" class="sheet" aria-labelledby="filterTitle">
+    <div class="sheet-header"><h2 id="filterTitle">筛选记录</h2><button type="button" class="sheet-close" id="filterClose" aria-label="关闭筛选">×</button></div>
+    <div class="sheet-form">
+      <label>来源<select id="filterSource"><option value="">全部来源</option><option>支付宝</option><option>微信</option><option>手动</option></select></label>
+      <label>分类<select id="filterCategory"><option value="">全部分类</option></select></label>
+      <label>收支<select id="filterDirection"><option value="">全部收支</option><option value="支出">支出</option><option value="收入">收入</option><option value="中性">不计收支</option></select></label>
+      <label class="check"><input type="checkbox" id="onlyUncat">只看未分类</label>
+      <label class="check"><input type="checkbox" id="onlyNeedsReview">只看需处理</label>
+      <div class="sheet-actions"><button type="button" class="btn btn-secondary" id="filterReset">重置</button><button type="button" class="btn btn-primary" id="filterApply">查看结果</button></div>
+    </div>
+  </dialog>
 
   <dialog id="quickEntryDialog" class="quick-sheet" aria-labelledby="quickEntryTitle">
     <div class="quick-header">
-      <h2 id="quickEntryTitle">记一笔 <span>支出</span></h2>
+      <h2 id="quickEntryTitle">记一笔</h2>
+      <div id="quickDirection" class="quick-direction" role="group" aria-label="记账方向"><button type="button" data-direction="支出" aria-pressed="true">支出</button><button type="button" data-direction="收入" aria-pressed="false">收入</button></div>
       <button type="button" class="quick-close" id="quickClose" aria-label="关闭记一笔">×</button>
     </div>
     <div class="quick-amount" aria-label="金额"><span>¥</span><output id="quickAmount" aria-live="polite">0.00</output></div>
-    <div class="quick-categories" id="quickCategories" role="group" aria-label="支出分类"></div>
+    <div class="quick-categories" id="quickCategories" role="group" aria-label="记账分类"></div>
     <div class="quick-meta">
       <label>日期<input type="date" id="quickDate" required></label>
       <label>说明（可选）<input type="text" id="quickText" placeholder="商户 / 说明"></label>
@@ -208,9 +202,11 @@
     </div>
   </dialog>
 
-  <dialog id="adjustmentDialog" class="adjustment-dialog" aria-labelledby="adjustmentTitle">
-    <h2 id="adjustmentTitle">调整支出统计</h2>
+  <dialog id="adjustmentDialog" class="sheet transaction-sheet" aria-labelledby="adjustmentTitle">
+    <div class="sheet-header"><h2 id="adjustmentTitle">交易详情</h2><button type="button" class="sheet-close" id="adjustmentClose" aria-label="关闭交易详情">×</button></div>
     <dl id="adjustmentFacts" class="adjustment-facts"></dl>
+    <div class="category-editor sheet-form"><label>分类<select id="transactionCategory"></select></label><button type="button" class="btn btn-primary" id="saveCategory">保存分类</button><p id="categoryMsg" class="form-error" role="alert"></p></div>
+    <details id="adjustmentControls" class="adjustment-controls"><summary>调整统计</summary>
     <p id="adjustmentRule" class="card-desc"></p>
     <div class="btn-row">
       <button type="button" class="btn btn-secondary" id="adjustmentInclude">正常计入</button>
@@ -222,7 +218,8 @@
       <button type="submit" class="btn btn-primary" id="adjustmentSave">保存计入金额</button>
     </form>
     <p id="adjustmentMsg" class="import-msg error" role="status" aria-live="polite"></p>
-    <button type="button" class="btn btn-secondary" id="adjustmentClose">关闭</button>
+    </details>
+    <button type="button" class="btn btn-danger" id="transactionDelete" hidden>删除手动记录</button>
   </dialog>
 
   <script type="module" src="js/app.js"></script>
