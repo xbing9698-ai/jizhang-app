@@ -1,4 +1,4 @@
-const CACHE = 'jizhang-v30';
+const CACHE = 'jizhang-v31';
 const ASSETS = [
   './', './index.html', './css/style.css',
   './js/app.js','./js/decode.js','./js/parse-alipay.js','./js/parse-wechat.js',
