@@ -51,7 +51,7 @@ for(const size of [192,512]) {
     for(let y=0;y<size;y++) for(let x=0;x<size;x++) {
       const i=(y*size+x)*4;
       assert.equal(icon.pixels[i+3],255);
-      if(icon.pixels[i]!==247||icon.pixels[i+1]!==246||icon.pixels[i+2]!==243) {
+      if(icon.pixels[i]!==250||icon.pixels[i+1]!==245||icon.pixels[i+2]!==237) {
         foreground++;
         assert.ok(Math.hypot(x+.5-size/2,y+.5-size/2)<=size*.4, '核心内容必须在裁切安全区内');
       }
@@ -66,5 +66,6 @@ test('美元图标有可维护向量源，Apple图标与manifest主题匹配浅�
   assert.ok(svg.includes('$')); assert.ok(!svg.includes('¥')); assert.ok(!svg.includes('<text'));
   assert.match(html,/rel="apple-touch-icon" href="icons\/icon-192.png"/);
   assert.match(html,new RegExp('name="theme-color" content="'+manifest.theme_color+'"'));
-  assert.equal(manifest.background_color,'#f7f6f3');
+  assert.equal(manifest.background_color,'#faf5ed');
+  assert.match(svg,/M241 119V379M265 119V379/);
 });

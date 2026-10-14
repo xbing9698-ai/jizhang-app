@@ -106,8 +106,7 @@ function openQuickEntry() {
   renderQuickEntry();
   quickDialog.showModal();
 }
-['quickEntryOpen', 'quickEntryImportOpen'].forEach(id =>
-  document.getElementById(id).addEventListener('click', openQuickEntry));
+document.getElementById('quickEntryOpen').addEventListener('click', openQuickEntry);
 document.getElementById('quickDirection').addEventListener('click', e => {
   const button = e.target.closest('[data-direction]');
   if (!button || quickSaving || button.dataset.direction === (quickDraft.direction || '支出')) return;
@@ -252,6 +251,7 @@ function rowHtml(t) {
   const title = t.counterparty || t.description || (isManualTransaction(t) ? '手动记账' : '未填写说明');
   const cls = directionClass(t);
   return '<button type="button" class="transaction-row" data-id="' + esc(t.id) + '" aria-label="查看交易：' + esc(title) + '">' +
+    '<span class="txn-icon" style="--category-color:' + colorForCategory(t.myCategory) + '">' + iconSvg(t.myCategory, 20) + '</span>' +
     '<span class="txn-main"><span class="txn-title">' + esc(title) + '</span>' +
     '<span class="txn-meta">' + esc(String(t.datetime || '').replace('T',' ').slice(0,16)) + '</span>' +
     '<span class="txn-tags">' + esc(t.myCategory || '其他') + ' · ' + esc(t.source || '') + '</span>' + accountingBadges(t) + '</span>' +

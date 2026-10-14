@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <title>我的记账</title>
-  <desc>柔和白底上的极简 $ 符号</desc>
-  <rect width="512" height="512" fill="#f7f6f3"/>
+  <desc>暖奶油白底上的陶土色双竖线 $ 符号</desc>
+  <rect width="512" height="512" fill="#faf5ed"/>
   <!-- 向量笔画不依赖字体；主体完全位于中心半径 40% 的安全圆内。 -->
-  <g transform="translate(3 7)" fill="none" stroke="#383531" stroke-linecap="round" stroke-linejoin="round">
+  <g transform="translate(3 7)" fill="none" stroke="#bd6d50" stroke-linecap="round" stroke-linejoin="round">
     <path d="M314 172C299 151 278 142 252 142C216 142 195 162 195 190C195 220 220 232 252 243C288 255 316 269 316 302C316 334 290 355 253 355C226 355 205 345 189 323" stroke-width="20"/>
-    <path d="M253 119V379" stroke-width="14"/>
+    <path d="M241 119V379M265 119V379" stroke-width="12"/>
   </g>
 </svg>

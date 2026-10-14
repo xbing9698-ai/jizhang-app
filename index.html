@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#f7f6f3">
+  <meta name="theme-color" content="#faf5ed">
   <title>我的记账</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="manifest" href="manifest.webmanifest">
@@ -27,22 +27,25 @@
     <!-- ============ 概览 ============ -->
     <section class="view active" id="view-overview">
       <div class="range-bar">
+        <details class="range-picker">
+          <summary aria-label="选择时间范围"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4M17 3v4M3 11h18"/></svg><span class="range-mode-title" aria-hidden="true"></span><span class="range-label" id="rangeLabel"></span><span class="range-chevron" aria-hidden="true">›</span></summary>
         <div class="range-modes" role="group" aria-label="时间范围">
           <button type="button" id="billingRange" aria-pressed="true">本账期</button>
           <button type="button" id="customRangeOpen" aria-pressed="false">自定义</button>
           <button type="button" id="allRange" aria-pressed="false">全部时间</button>
         </div>
         <div class="range-context">
-          <span class="range-label" id="rangeLabel"></span>
           <label id="billingMonthWrap" class="billing-month"><span class="sr-only">选择账期</span><input type="month" id="monthPick" aria-label="选择账期"></label>
         </div>
+        </details>
       </div>
 
 
 
 
-      <div class="kpi-row">
+      <div class="kpi-row" aria-label="收支总览">
         <div class="kpi-card kpi-net">
+          <svg class="balance-landscape" viewBox="0 0 400 160" preserveAspectRatio="none" aria-hidden="true"><path d="M0 88C80 45 125 158 210 95S320 12 400 66V160H0Z" fill="#f3dfc8"/><path d="M0 140C85 106 180 156 260 112S350 74 400 50V160H0Z" fill="#e9dfc6"/></svg>
           <span class="kpi-label">结余</span>
           <span class="kpi-value" id="sumNet">¥0.00</span>
           <span class="kpi-sub" id="netSub"></span>
@@ -57,11 +60,6 @@
           <span class="kpi-value" id="sumIncome">¥0.00</span>
           <span class="kpi-delta" id="incomeDelta"></span>
         </div>
-      </div>
-
-      <div class="ledger-tools">
-        <button type="button" class="text-button" id="snapshotsOpen"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span>资产快照</span><span class="tool-chevron" aria-hidden="true">›</span></button>
-        <button type="button" class="text-button" id="balanceOpen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h10M4 10h7M4 15h6m4 1 3 3 5-6"/></svg><span>账期核对</span><span class="tool-chevron" aria-hidden="true">›</span></button>
       </div>
 
       <div class="card category-surface">
@@ -80,6 +78,11 @@
         <p class="empty-hint" id="pieEmpty" hidden>还没有记录，记一笔或导入账单就能看到花销。</p>
         <ul class="cat-list" id="catList"></ul>
         </div>
+      </div>
+
+      <div class="ledger-tools">
+        <button type="button" class="text-button tool-row" id="snapshotsOpen"><span class="tool-icon tone-clay"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 9h16M15 12h5v5h-5Z"/></svg></span><span class="tool-copy"><span>资产快照</span><small>记录总资产与总负债</small></span><span class="tool-chevron" aria-hidden="true">›</span></button>
+        <button type="button" class="text-button tool-row" id="balanceOpen"><span class="tool-icon tone-amber"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8M8 12h6m-4 4 2 2 4-4"/></svg></span><span class="tool-copy"><span>账期核对</span><small>查看账单与资产变化</small></span><span class="tool-chevron" aria-hidden="true">›</span></button>
       </div>
 
       <div class="card" id="topCard" hidden>
@@ -107,7 +110,7 @@
         <input type="search" id="searchInput" class="search-input" placeholder="搜索商户、说明、金额或分类…">
       </div>
       <div class="detail-toolbar">
-        <button type="button" class="btn btn-secondary" id="filterOpen">筛选</button>
+        <button type="button" class="btn btn-secondary" id="filterOpen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18l-7 8v7l-4 2v-9Z"/></svg>筛选</button>
         <label class="sort-control"><span>排序</span><select id="sortOrder" aria-label="排序">
           <option value="newest">时间：最新在前</option><option value="oldest">时间：最早在前</option>
           <option value="highest">原金额：从高到低</option><option value="lowest">原金额：从低到高</option>
@@ -126,43 +129,46 @@
 
     <!-- ============ 导入 ============ -->
     <section class="view" id="view-import">
+      <div class="page-heading"><h1>导入</h1></div>
       <div class="card import-primary">
-        <h2 class="card-title">导入账单</h2>
-        <p class="card-desc">选择支付宝 / 通用 <b>.csv</b> 或微信 <b>.xlsx</b>，可一次多选。数据只在本机处理，不上传。</p>
         <label class="file-drop" id="fileDrop">
           <input type="file" id="fileInput" accept=".csv,.xlsx" multiple hidden>
-          <span class="file-drop-icon">＋</span>
-          <span class="file-drop-text">点击选择账单文件</span>
+          <svg class="file-drop-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M14 35H11a8 8 0 0 1-1-16 14 14 0 0 1 27-2 9 9 0 0 1 0 18h-3M24 40V24m-7 7 7-7 7 7"/></svg>
+          <span class="file-drop-text">选择账单文件</span>
+          <span class="file-drop-hint">微信 / 支付宝 / 通用 CSV</span>
+          <span class="file-drop-button">选择文件</span>
         </label>
+        <p class="privacy-note">支持多选 · 只在本机处理，不上传</p>
         <p class="import-msg" id="importMsg"></p>
         <button type="button" class="btn btn-secondary" id="reviewPending" title="查看全部时间的需处理记录" hidden>查看需处理</button>
-        <p class="import-msg" id="duplicateNotice" role="status"></p>
-        <button type="button" class="btn btn-secondary" id="duplicateOpen">导入对账</button>
       </div>
 
-      <div class="card import-secondary">
-        <h2 class="card-title">通用 CSV</h2>
+      <div class="import-tools">
+      <details class="import-tool import-secondary">
+        <summary class="tool-row"><span class="tool-icon tone-green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h10l4 4v14H5ZM14 3v5h5M8 12h8M8 16h8M12 10v8"/></svg></span><span class="tool-copy"><span>通用 CSV</span><small>其他平台的账单也能整理导入</small></span><span class="tool-chevron" aria-hidden="true">›</span></summary>
+        <div class="tool-expanded">
         <p class="card-desc">用于拼多多、银行卡、Google Play、现金等整理后的记录。表头：日期,金额,收支,分类,说明,来源,外部ID。日期、金额、收支和来源必填；金额大于0，最多两位小数。其他字段可留空。来源“手动”保留给记一笔。</p>
-        <button type="button" class="btn btn-secondary" id="csvTemplate">下载 CSV 模板</button>
+        </div>
+      </details>
+      <button type="button" class="tool-row" id="csvTemplate"><span class="tool-icon tone-blue"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h10l4 4v14H5ZM14 3v5h5M12 10v7m-3-3 3 3 3-3"/></svg></span><span class="tool-copy"><span>下载模板</span><small>获取标准 CSV 账单模板</small></span><span class="tool-chevron" aria-hidden="true">›</span></button>
+      <div class="import-tool">
+        <div class="tool-row import-reconcile-row"><span class="tool-icon tone-lilac"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 8a8 8 0 0 0-14-3L3 8m0-5v5h5M4 16a8 8 0 0 0 14 3l3-3m0 5v-5h-5"/></svg></span><span class="tool-copy"><button type="button" class="tool-title-button" id="duplicateOpen">导入对账</button><small>核对手动记录与导入账单</small></span><span class="tool-chevron" aria-hidden="true">›</span></div>
+        <p class="import-msg tool-notice" id="duplicateNotice" role="status"></p>
       </div>
-
-      <div class="card import-manual">
-        <h2 class="card-title">日常记账</h2>
-        <p class="card-desc">日常收支记一笔，每月导入账单做汇总。</p>
-        <button type="button" class="btn btn-secondary" id="quickEntryImportOpen">＋ 记一笔</button>
-      </div>
-
-      <div class="card import-backup">
-        <h2 class="card-title">数据备份</h2>
+      <details class="import-tool import-backup">
+        <summary class="tool-row"><span class="tool-icon tone-amber"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/></svg></span><span class="tool-copy"><span>数据备份</span><small>导出或恢复交易与资产快照</small></span><span class="tool-chevron" aria-hidden="true">›</span></summary>
+        <div class="tool-expanded">
         <p class="card-desc">导出交易、资产快照和核对状态为 JSON，换设备后可导入恢复。兼容旧版备份。</p>
         <div class="btn-row">
           <button class="btn btn-secondary" id="exportBtn">导出备份</button>
           <label class="btn btn-secondary">导入备份
             <input type="file" id="importBackup" accept=".json" hidden></label>
         </div>
-        <button class="btn btn-danger clear-data" id="clearBtn">清空数据</button>
         <p id="backupMsg" class="import-msg" role="status" aria-live="polite"></p>
+        </div>
+      </details>
       </div>
+      <button type="button" class="tool-row clear-data" id="clearBtn"><span class="tool-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 3h6M6 6l1 15h10l1-15M10 10v7M14 10v7"/></svg></span><span class="tool-copy"><span>清空数据</span><small>删除本机全部记录，请谨慎操作</small></span><span class="tool-chevron" aria-hidden="true">›</span></button>
     </section>
   </main>
   <div class="global-quick-action">

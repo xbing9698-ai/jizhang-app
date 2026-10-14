@@ -7,7 +7,16 @@ test('首页按结余、分类组织，保留全部时间控件及资产入口',
   const page=html.slice(html.indexOf('id="view-overview"'),html.indexOf('id="view-detail"'));
   assert.ok(!page.includes('id="quickEntryOpen"'));
   assert.ok(page.indexOf('id="sumNet"')<page.indexOf('id="pieChart"'));
+  assert.ok(page.indexOf('id="pieChart"')<page.indexOf('id="snapshotsOpen"'));
   for(const id of ['billingRange','customRangeOpen','allRange','monthPick','sumIncome','sumExpense','snapshotsOpen','balanceOpen','trendChart','periodRows'])assert.ok(page.includes('id="'+id+'"'));
+});
+test('导入分组保留实际文件和备份控件，记账入口只有共用的底部按钮',()=>{
+  const page=html.slice(html.indexOf('id="view-import"'),html.indexOf('</main>'));
+  for(const id of ['fileInput','reviewPending','duplicateOpen','csvTemplate','exportBtn','importBackup','clearBtn'])assert.ok(page.includes('id="'+id+'"'));
+  assert.match(page,/<input type="file" id="fileInput" accept="\.csv,\.xlsx" multiple hidden>/);
+  assert.ok(page.indexOf('id="fileInput"')<page.indexOf('id="csvTemplate"'));
+  assert.match(page,/<details class="import-tool import-backup">/);
+  assert.ok(!page.includes('quickEntryImportOpen'));
 });
 test('记一笔是页面外的唯一全局动作，位于三项导航之前并为内容预留安全区',()=>{
   const action=html.indexOf('class="global-quick-action"');

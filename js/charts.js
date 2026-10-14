@@ -1,21 +1,21 @@
 // 图表配色：按分类名固定映射（同一分类颜色恒定）
 // 低饱和色与浅白界面协调；颜色只影响显示，不改变分类与金额。
 const CATEGORY_COLOR_MAP = {
-  '餐饮': '#91686a',
-  '交通': '#8a998e',
-  '购物': '#b5a18c',
-  '学习教育': '#919ba8',
-  '娱乐休闲': '#b3a18e',
-  '话费通讯': '#9ca9a5',
-  '生活缴费': '#ada795',
-  '医疗健康': '#aa8889',
-  '转账': '#a5a0a5',
-  '其他': '#cbc5bd',
+  '餐饮': '#bf8065',
+  '交通': '#86a6a0',
+  '购物': '#d5a074',
+  '学习教育': '#83a7b9',
+  '娱乐休闲': '#a29bbd',
+  '话费通讯': '#97b4bf',
+  '生活缴费': '#d6ae70',
+  '医疗健康': '#98ad8e',
+  '转账': '#aea1b4',
+  '其他': '#b7b0a6',
 };
-const FALLBACK_COLOR = '#cbc5bd';
+const FALLBACK_COLOR = '#b7b0a6';
 export const colorForCategory = (name) => Object.hasOwn(CATEGORY_COLOR_MAP, name) ? CATEGORY_COLOR_MAP[name] : FALLBACK_COLOR;
 
-const INK = '#383531', MUTE = '#87817a', GRID = '#efeeeb';
+const INK = '#302b26', MUTE = '#8e847b', GRID = '#eee6dc';
 let pie, trend;
 
 export function renderCategoryPie(canvas, byCategory) {
@@ -28,7 +28,7 @@ export function renderCategoryPie(canvas, byCategory) {
     data: { labels, datasets: [{
       data,
       backgroundColor: colors,
-      borderColor: '#ffffff',
+      borderColor: '#fffdf9',
       borderWidth: 2,
       hoverOffset: 3,
     }] },
@@ -61,8 +61,8 @@ export function renderTrend(canvas, byDay) {
     data: { labels: labels.map(d => d.slice(5)), datasets: [{
       label: '每日支出',
       data,
-      backgroundColor: '#948d84',
-      hoverBackgroundColor: '#865456',
+      backgroundColor: '#c1947d',
+      hoverBackgroundColor: '#b15f45',
       borderRadius: 3,
       maxBarThickness: 18,
     }] },
