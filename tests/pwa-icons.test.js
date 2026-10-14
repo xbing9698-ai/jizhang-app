@@ -44,14 +44,14 @@ test('manifest名称不变，启动与图标路径在GitHub Pages子路径内有
 });
 
 for(const size of [192,512]) {
-  test(`${size}图标为正确尺寸PNG，¥及点缀位于maskable安全圆内`, () => {
+  test(`${size}图标为正确尺寸PNG，美元符号位于maskable安全圆内`, () => {
     const icon = png(new URL(`icons/icon-${size}.png`,root));
     assert.equal(icon.width,size); assert.equal(icon.height,size);
     let foreground = 0;
     for(let y=0;y<size;y++) for(let x=0;x<size;x++) {
       const i=(y*size+x)*4;
       assert.equal(icon.pixels[i+3],255);
-      if(icon.pixels[i]!==244||icon.pixels[i+1]!==240||icon.pixels[i+2]!==230) {
+      if(icon.pixels[i]!==247||icon.pixels[i+1]!==246||icon.pixels[i+2]!==243) {
         foreground++;
         assert.ok(Math.hypot(x+.5-size/2,y+.5-size/2)<=size*.4, '核心内容必须在裁切安全区内');
       }
@@ -59,3 +59,12 @@ for(const size of [192,512]) {
     assert.ok(foreground>size*size*.01 && foreground<size*size*.1, '主体清晰且保留充分留白');
   });
 }
+
+test('美元图标有可维护向量源，Apple图标与manifest主题匹配浅色界面',()=>{
+  const svg=readFileSync(new URL('icons/icon.svg',root),'utf8');
+  const html=readFileSync(new URL('index.html',root),'utf8');
+  assert.ok(svg.includes('$')); assert.ok(!svg.includes('¥')); assert.ok(!svg.includes('<text'));
+  assert.match(html,/rel="apple-touch-icon" href="icons\/icon-192.png"/);
+  assert.match(html,new RegExp('name="theme-color" content="'+manifest.theme_color+'"'));
+  assert.equal(manifest.background_color,'#f7f6f3');
+});

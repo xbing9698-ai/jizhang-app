@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#f5f2eb">
+  <meta name="theme-color" content="#f7f6f3">
   <title>我的记账</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="manifest" href="manifest.webmanifest">
@@ -16,7 +16,7 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="brand-dot"></span>
+      <img class="brand-icon" src="icons/icon-192.png" width="30" height="30" alt="">
       <span class="brand-name">我的记账</span>
     </div>
     <span class="brand-sub">轻松记录 · 每月复盘</span>
@@ -40,7 +40,14 @@
 
 
 
+      <button type="button" class="btn btn-primary quick-entry-button" id="quickEntryOpen">＋ 记一笔</button>
+
       <div class="kpi-row">
+        <div class="kpi-card kpi-net">
+          <span class="kpi-label">结余</span>
+          <span class="kpi-value" id="sumNet">¥0.00</span>
+          <span class="kpi-sub" id="netSub"></span>
+        </div>
         <div class="kpi-card kpi-expense">
           <span class="kpi-label">支出</span>
           <span class="kpi-value" id="sumExpense">¥0.00</span>
@@ -51,21 +58,19 @@
           <span class="kpi-value" id="sumIncome">¥0.00</span>
           <span class="kpi-delta" id="incomeDelta"></span>
         </div>
-        <div class="kpi-card kpi-net">
-          <span class="kpi-label">结余</span>
-          <span class="kpi-value" id="sumNet">¥0.00</span>
-          <span class="kpi-sub" id="netSub"></span>
-        </div>
       </div>
 
-      <button type="button" class="btn btn-primary quick-entry-button" id="quickEntryOpen">＋ 记一笔</button>
-      <div class="ledger-tools"><button type="button" class="text-button" id="snapshotsOpen">资产快照</button><button type="button" class="text-button" id="balanceOpen">账期核对</button></div>
+      <div class="ledger-tools">
+        <button type="button" class="text-button" id="snapshotsOpen"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span>资产快照</span><span class="tool-chevron" aria-hidden="true">›</span></button>
+        <button type="button" class="text-button" id="balanceOpen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h10M4 10h7M4 15h6m4 1 3 3 5-6"/></svg><span>账期核对</span><span class="tool-chevron" aria-hidden="true">›</span></button>
+      </div>
 
-      <div class="card">
+      <div class="card category-surface">
         <div class="card-head">
-          <h2 class="card-title">主要花销</h2><button type="button" class="text-button" id="overviewDetail">查看明细</button>
+          <h2 class="card-title">分类花销</h2><button type="button" class="text-button" id="overviewDetail">查看明细</button>
           <span class="card-meta" id="expenseCount"></span>
         </div>
+        <div class="category-content">
         <div class="pie-wrap">
           <div class="chart-wrap chart-pie"><canvas id="pieChart"></canvas></div>
           <div class="pie-center" id="pieCenter" hidden>
@@ -75,6 +80,7 @@
         </div>
         <p class="empty-hint" id="pieEmpty" hidden>还没有记录，记一笔或导入账单就能看到花销。</p>
         <ul class="cat-list" id="catList"></ul>
+        </div>
       </div>
 
       <div class="card" id="topCard" hidden>
@@ -121,7 +127,7 @@
 
     <!-- ============ 导入 ============ -->
     <section class="view" id="view-import">
-      <div class="card">
+      <div class="card import-primary">
         <h2 class="card-title">导入账单</h2>
         <p class="card-desc">选择支付宝 / 通用 <b>.csv</b> 或微信 <b>.xlsx</b>，可一次多选。数据只在本机处理，不上传。</p>
         <label class="file-drop" id="fileDrop">
@@ -135,35 +141,35 @@
         <button type="button" class="btn btn-secondary" id="duplicateOpen">导入对账</button>
       </div>
 
-      <div class="card">
+      <div class="card import-secondary">
         <h2 class="card-title">通用 CSV</h2>
         <p class="card-desc">用于拼多多、银行卡、Google Play、现金等整理后的记录。表头：日期,金额,收支,分类,说明,来源,外部ID。日期、金额、收支和来源必填；金额大于0，最多两位小数。其他字段可留空。来源“手动”保留给记一笔。</p>
         <button type="button" class="btn btn-secondary" id="csvTemplate">下载 CSV 模板</button>
       </div>
 
-      <div class="card">
+      <div class="card import-manual">
         <h2 class="card-title">日常记账</h2>
         <p class="card-desc">日常收支记一笔，每月导入账单做汇总。</p>
         <button type="button" class="btn btn-secondary" id="quickEntryImportOpen">＋ 记一笔</button>
       </div>
 
-      <div class="card">
+      <div class="card import-backup">
         <h2 class="card-title">数据备份</h2>
         <p class="card-desc">导出交易、资产快照和核对状态为 JSON，换设备后可导入恢复。兼容旧版备份。</p>
         <div class="btn-row">
-          <button class="btn btn-primary" id="exportBtn">导出备份</button>
+          <button class="btn btn-secondary" id="exportBtn">导出备份</button>
           <label class="btn btn-secondary">导入备份
             <input type="file" id="importBackup" accept=".json" hidden></label>
-          <button class="btn btn-danger" id="clearBtn">清空数据</button>
         </div>
+        <button class="btn btn-danger clear-data" id="clearBtn">清空数据</button>
         <p id="backupMsg" class="import-msg" role="status" aria-live="polite"></p>
       </div>
     </section>
   </main>
   <nav class="tabs" id="tabs" aria-label="主导航">
-    <button class="tab active" data-view="overview">首页</button>
-    <button class="tab" data-view="detail">明细</button>
-    <button class="tab" data-view="import">导入</button>
+    <button class="tab active" data-view="overview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10H3Z"/><path d="M9 20v-7h6v7"/></svg><span>首页</span></button>
+    <button class="tab" data-view="detail"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h14M7 12h14M7 19h14M3 5h.01M3 12h.01M3 19h.01"/></svg><span>明细</span></button>
+    <button class="tab" data-view="import"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m-4-4 4 4 4-4M4 15v6h16v-6"/></svg><span>导入</span></button>
   </nav>
 
   <dialog id="customRangeDialog" class="sheet" aria-labelledby="customRangeTitle">

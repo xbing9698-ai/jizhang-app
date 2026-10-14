@@ -1,21 +1,21 @@
 // 图表配色：按分类名固定映射（同一分类颜色恒定）
-// The Ledger 刊物大地色系：低饱和、暖调、似印刷油墨，落在暖纸底上协调
+// 低饱和色与浅白界面协调；颜色只影响显示，不改变分类与金额。
 const CATEGORY_COLOR_MAP = {
-  '餐饮': '#8a2a33',      // 酒红（首要分类，呼应点缀）
-  '交通': '#5a6b5a',      // 橄榄灰绿
-  '购物': '#b0763f',      // 赭石焦糖
-  '学习教育': '#4a5a6e',  // 黛蓝
-  '娱乐休闲': '#c39a4e',  // 芥末金
-  '话费通讯': '#6e8a82',  // 桉叶灰青
-  '生活缴费': '#8a7a52',  // 卡其
-  '医疗健康': '#a85a55',  // 陶土玫
-  '转账': '#9a907c',      // 灰褐
-  '其他': '#c8bca6',      // 浅灰褐
+  '餐饮': '#91686a',
+  '交通': '#8a998e',
+  '购物': '#b5a18c',
+  '学习教育': '#919ba8',
+  '娱乐休闲': '#b3a18e',
+  '话费通讯': '#9ca9a5',
+  '生活缴费': '#ada795',
+  '医疗健康': '#aa8889',
+  '转账': '#a5a0a5',
+  '其他': '#cbc5bd',
 };
-const FALLBACK_COLOR = '#c8bca6';
+const FALLBACK_COLOR = '#cbc5bd';
 export const colorForCategory = (name) => Object.hasOwn(CATEGORY_COLOR_MAP, name) ? CATEGORY_COLOR_MAP[name] : FALLBACK_COLOR;
 
-const INK = '#1c1a15', MUTE = '#9a907c', GRID = '#ddd4c2';
+const INK = '#383531', MUTE = '#87817a', GRID = '#efeeeb';
 let pie, trend;
 
 export function renderCategoryPie(canvas, byCategory) {
@@ -28,14 +28,14 @@ export function renderCategoryPie(canvas, byCategory) {
     data: { labels, datasets: [{
       data,
       backgroundColor: colors,
-      borderColor: '#fbf9f2',
+      borderColor: '#ffffff',
       borderWidth: 2,
-      hoverOffset: 6,
+      hoverOffset: 3,
     }] },
     options: {
       maintainAspectRatio: false,
       cutout: '64%',
-      animation: { duration: 500 },
+      animation: false,
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -61,21 +61,22 @@ export function renderTrend(canvas, byDay) {
     data: { labels: labels.map(d => d.slice(5)), datasets: [{
       label: '每日支出',
       data,
-      backgroundColor: '#1c1a15',
-      hoverBackgroundColor: '#8a2a33',
-      borderRadius: 6,
-      maxBarThickness: 28,
+      backgroundColor: '#948d84',
+      hoverBackgroundColor: '#865456',
+      borderRadius: 3,
+      maxBarThickness: 18,
     }] },
     options: {
       maintainAspectRatio: false,
+      animation: false,
       plugins: {
         legend: { display: false },
         tooltip: { callbacks: { label: (c) => ` ¥${c.parsed.y.toFixed(2)}` } }
       },
       scales: {
-        x: { grid: { display: false }, ticks: { color: MUTE, font: { size: 11 } } },
+        x: { grid: { display: false }, border: { display: false }, ticks: { color: MUTE, maxTicksLimit:7, font: { size: 10 } } },
         y: { beginAtZero: true, grid: { color: GRID }, border: { display: false },
-          ticks: { color: MUTE, font: { size: 11 } } }
+          ticks: { color: MUTE, maxTicksLimit:4, font: { size: 10 } } }
       }
     }
   });

@@ -1,4 +1,4 @@
-const CACHE = 'jizhang-v29';
+const CACHE = 'jizhang-v30';
 const ASSETS = [
   './', './index.html', './css/style.css',
   './js/app.js','./js/decode.js','./js/parse-alipay.js','./js/parse-wechat.js',
@@ -14,7 +14,7 @@ const ASSETS = [
   './js/vendor/papaparse.min.js','./js/vendor/xlsx.full.min.js','./js/vendor/chart.umd.min.js',
   './fonts/fraunces.woff2','./fonts/fraunces-italic.woff2',
   './fonts/noto-serif-sc-400.woff2','./fonts/noto-serif-sc-700.woff2',
-  './manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png'
+  './manifest.webmanifest','./icons/icon.svg','./icons/icon-192.png','./icons/icon-512.png'
 ];
 self.addEventListener('install', e =>
   // 新版本预缓存绕过旧 HTTP 缓存，避免把旧首页或图标带入新缓存。
