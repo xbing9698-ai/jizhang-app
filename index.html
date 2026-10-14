@@ -59,6 +59,7 @@
       </div>
 
       <button type="button" class="btn btn-primary quick-entry-button" id="quickEntryOpen">＋ 记一笔</button>
+      <div class="ledger-tools"><button type="button" class="text-button" id="snapshotsOpen">资产快照</button><button type="button" class="text-button" id="balanceOpen">账期核对</button></div>
 
       <div class="card">
         <div class="card-head">
@@ -122,7 +123,7 @@
     <section class="view" id="view-import">
       <div class="card">
         <h2 class="card-title">导入账单</h2>
-        <p class="card-desc">选择支付宝导出的 <b>.csv</b> 或微信导出的 <b>.xlsx</b>，可一次多选。数据只在本机处理，不上传。</p>
+        <p class="card-desc">选择支付宝 / 通用 <b>.csv</b> 或微信 <b>.xlsx</b>，可一次多选。数据只在本机处理，不上传。</p>
         <label class="file-drop" id="fileDrop">
           <input type="file" id="fileInput" accept=".csv,.xlsx" multiple hidden>
           <span class="file-drop-icon">＋</span>
@@ -130,6 +131,14 @@
         </label>
         <p class="import-msg" id="importMsg"></p>
         <button type="button" class="btn btn-secondary" id="reviewPending" title="查看全部时间的需处理记录" hidden>查看需处理</button>
+        <p class="import-msg" id="duplicateNotice" role="status"></p>
+        <button type="button" class="btn btn-secondary" id="duplicateOpen">导入对账</button>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">通用 CSV</h2>
+        <p class="card-desc">用于拼多多、银行卡、Google Play、现金等整理后的记录。表头：日期,金额,收支,分类,说明,来源,外部ID。日期、金额、收支和来源必填；金额大于0，最多两位小数。其他字段可留空。来源“手动”保留给记一笔。</p>
+        <button type="button" class="btn btn-secondary" id="csvTemplate">下载 CSV 模板</button>
       </div>
 
       <div class="card">
@@ -140,7 +149,7 @@
 
       <div class="card">
         <h2 class="card-title">数据备份</h2>
-        <p class="card-desc">导出为 JSON 存档，换设备或清缓存后可导入恢复。</p>
+        <p class="card-desc">导出交易、资产快照和核对状态为 JSON，换设备后可导入恢复。兼容旧版备份。</p>
         <div class="btn-row">
           <button class="btn btn-primary" id="exportBtn">导出备份</button>
           <label class="btn btn-secondary">导入备份
@@ -220,6 +229,59 @@
     <p id="adjustmentMsg" class="import-msg error" role="status" aria-live="polite"></p>
     </details>
     <button type="button" class="btn btn-danger" id="transactionDelete" hidden>删除手动记录</button>
+    <button type="button" class="btn btn-secondary" id="reconciliationUndo" hidden>撤销核对</button>
+  </dialog>
+
+  <dialog id="snapshotsDialog" class="sheet" aria-labelledby="snapshotsTitle">
+    <div class="sheet-header"><h2 id="snapshotsTitle">资产快照</h2><button type="button" class="sheet-close" id="snapshotsClose" aria-label="关闭资产快照">×</button></div>
+    <p class="section-note">记录一个时间点的总资产与总负债，不管理账户。</p>
+    <div class="btn-row"><button type="button" class="btn btn-primary" id="snapshotAdd">新增快照</button><button type="button" class="btn btn-secondary" id="snapshotBalance">账期核对</button></div>
+    <p id="snapshotListMsg" class="import-msg" role="status"></p>
+    <div id="snapshotDeletePrompt" class="snapshot-delete-prompt" hidden>
+      <p id="snapshotDeleteLabel"></p>
+      <div class="btn-row"><button type="button" class="btn btn-danger" id="snapshotDeleteConfirm">确认删除快照</button><button type="button" class="btn btn-secondary" id="snapshotDeleteCancel">取消</button></div>
+    </div>
+    <div id="snapshotList"></div>
+  </dialog>
+
+  <dialog id="snapshotEditDialog" class="sheet" aria-labelledby="snapshotEditTitle">
+    <div class="sheet-header"><h2 id="snapshotEditTitle">新增快照</h2><button type="button" class="sheet-close" id="snapshotEditClose" aria-label="关闭快照输入">×</button></div>
+    <form id="snapshotForm" class="sheet-form" novalidate>
+      <label>日期<input type="date" id="snapshotDate" required></label>
+      <label>总资产（元）<input type="number" id="snapshotAssets" inputmode="decimal" min="0" step="0.01" required></label>
+      <label>总负债（元）<input type="number" id="snapshotLiabilities" inputmode="decimal" min="0" step="0.01" value="0" required></label>
+      <label>备注（可选）<input type="text" id="snapshotNote"></label>
+      <p class="snapshot-net">净资产 <output id="snapshotNet">—</output></p>
+      <p id="snapshotEditMsg" class="form-error" role="alert"></p>
+      <button type="submit" class="btn btn-primary" id="snapshotSave">保存快照</button>
+    </form>
+  </dialog>
+
+  <dialog id="balanceDialog" class="sheet" aria-labelledby="balanceTitle">
+    <div class="sheet-header"><h2 id="balanceTitle">账期核对</h2><button type="button" class="sheet-close" id="balanceClose" aria-label="关闭账期核对">×</button></div>
+    <form id="balanceForm" class="sheet-form" novalidate>
+      <label>期初快照<select id="balanceOpening"></select></label>
+      <label>期末快照<select id="balanceClosing"></select></label>
+      <label>统计范围<select id="balanceMode"><option value="current">首页当前范围</option><option value="billing">本账期</option><option value="custom">自定义</option></select></label>
+      <div id="balanceDates" class="sheet-form" hidden><label>开始日期<input type="date" id="balanceStart"></label><label>结束日期<input type="date" id="balanceEnd"></label></div>
+      <p id="balanceRange" class="section-note"></p>
+      <button type="submit" class="btn btn-primary">核对</button>
+      <p id="balanceMsg" class="form-error" role="alert"></p>
+    </form>
+    <div id="balanceResult" aria-live="polite"></div>
+    <p class="section-note">核对差额仅用于辅助检查。同日工资到账、退款、转账时点、现金变化等情况也可能产生差额。</p>
+  </dialog>
+
+  <dialog id="duplicateDialog" class="sheet" aria-labelledby="duplicateTitle">
+    <div class="sheet-header"><h2 id="duplicateTitle">导入对账</h2><button type="button" class="sheet-close" id="duplicateClose" aria-label="关闭导入对账">×</button></div>
+    <p class="section-note">只提示手动与导入记录的疑似重复，不会自动确认。确认后保留两笔记录，手动记录不再计入统计，可在交易详情撤销。</p>
+    <p id="duplicateCount" class="import-msg"></p>
+    <div id="duplicatePair"></div>
+    <p id="duplicateMsg" class="form-error" role="alert"></p>
+    <div id="duplicateActions" class="sheet-form">
+      <button type="button" class="btn btn-primary" id="duplicateConfirm">确认同一笔</button>
+      <div class="btn-row"><button type="button" class="btn btn-secondary" id="duplicateDismiss">不是同一笔</button><button type="button" class="btn btn-secondary" id="duplicateLater">暂不处理</button></div>
+    </div>
   </dialog>
 
   <script type="module" src="js/app.js"></script>

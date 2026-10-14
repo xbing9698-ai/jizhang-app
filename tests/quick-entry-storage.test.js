@@ -23,7 +23,7 @@ test('快速记账持久化刷新重读，删除后统计恢复，导入记录�
   await assert.rejects(deleteManualTransaction(imported.id), /只能删除/);
 });
 
-test('快速记账沿用旧JSON备份格式，导出清空恢复后字段完整', async () => {
+test('快速记账在扩展JSON备份中导出清空恢复后字段完整', async () => {
   const t = create();
   await saveTransactions([t]);
   let blob;
@@ -32,7 +32,7 @@ test('快速记账沿用旧JSON备份格式，导出清空恢复后字段完整'
   globalThis.document = { createElement: () => ({ click() {} }) };
   await exportBackup();
   const json = await blob.text();
-  assert.deepEqual(Object.keys(JSON.parse(json)).sort(), ['mem','txns']);
+  assert.deepEqual(Object.keys(JSON.parse(json)).sort(), ['mem','snapshots','txns']);
   await clearAllData();
   assert.deepEqual(await loadAllTransactions(), []);
   await importBackup({ text:async () => json });

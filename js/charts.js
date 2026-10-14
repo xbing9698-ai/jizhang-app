@@ -13,7 +13,7 @@ const CATEGORY_COLOR_MAP = {
   '其他': '#c8bca6',      // 浅灰褐
 };
 const FALLBACK_COLOR = '#c8bca6';
-export const colorForCategory = (name) => CATEGORY_COLOR_MAP[name] || FALLBACK_COLOR;
+export const colorForCategory = (name) => Object.hasOwn(CATEGORY_COLOR_MAP, name) ? CATEGORY_COLOR_MAP[name] : FALLBACK_COLOR;
 
 const INK = '#1c1a15', MUTE = '#9a907c', GRID = '#ddd4c2';
 let pie, trend;

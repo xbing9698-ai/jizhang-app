@@ -1,4 +1,4 @@
-import { isCountableExpense } from './dedup.js';
+import { isCountableExpense, isCountableIncome } from './dedup.js';
 import { billingPeriodLabel, filterTransactionsByRange } from './period.js';
 import { countedExpenseAmount } from './review.js';
 
@@ -16,11 +16,13 @@ export function summarize(transactions, range) {
       s.totalExpense += amount;
       s.count += 1;
       const cat = t.myCategory || '其他';
-      s.byCategory[cat] = (s.byCategory[cat] || 0) + amount;
+      if (!Object.hasOwn(s.byCategory, cat))
+        Object.defineProperty(s.byCategory, cat, {value:0,enumerable:true,writable:true,configurable:true});
+      s.byCategory[cat] += amount;
       const day = t.datetime.slice(0, 10);
       s.byDay[day] = (s.byDay[day] || 0) + amount;
       expenses.push(t);
-    } else if (t.direction === '收入') {
+    } else if (isCountableIncome(t)) {
       s.totalIncome += t.amount;
     }
   }
@@ -63,7 +65,7 @@ export function groupByCounterparty(transactions, range) {
     if (isCountableExpense(t)) {
       g.expense += countedExpenseAmount(t);
       g.expenseCount += 1;
-    } else if (t.direction === '收入') {
+    } else if (isCountableIncome(t)) {
       g.income += t.amount;
       g.incomeCount += 1;
     } else {
@@ -99,7 +101,7 @@ export function buildPeriodTable(transactions) {
     if (isCountableExpense(t)) {
       row.expense += countedExpenseAmount(t);
       row.expenseCount += 1;
-    } else if (t.direction === '收入') {
+    } else if (isCountableIncome(t)) {
       row.income += t.amount;
       row.incomeCount += 1;
     }

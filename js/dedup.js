@@ -1,4 +1,5 @@
 import { businessOrderKey, stableSerialize, transactionIdentity } from './identity.js';
+import { isReconciledDuplicate } from './reconciliation.js';
 
 export function mergeTransactions(existing, incoming) {
   const seen = new Set(existing.map(t => t.id));
@@ -22,5 +23,9 @@ export function mergeTransactions(existing, incoming) {
 }
 
 export function isCountableExpense(t) {
-  return t.direction === '支出' && t.status !== '交易关闭' && t.excluded !== true;
+  return t.direction === '支出' && t.status !== '交易关闭' && t.excluded !== true && !isReconciledDuplicate(t);
+}
+
+export function isCountableIncome(t) {
+  return t.direction === '收入' && !isReconciledDuplicate(t);
 }

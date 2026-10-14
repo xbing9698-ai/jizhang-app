@@ -1,4 +1,4 @@
-const CACHE = 'jizhang-v26';
+const CACHE = 'jizhang-v29';
 const ASSETS = [
   './', './index.html', './css/style.css',
   './js/app.js','./js/decode.js','./js/parse-alipay.js','./js/parse-wechat.js',
@@ -8,6 +8,7 @@ const ASSETS = [
   './js/manual.js',
   './js/quick-entry.js',
   './js/detail.js','./js/transaction-edit.js',
+  './js/generic-csv.js','./js/snapshots.js','./js/reconciliation.js','./js/ledger-tools.js',
   './js/review.js',
   './js/storage.js','./js/charts.js','./js/icons.js',
   './js/vendor/papaparse.min.js','./js/vendor/xlsx.full.min.js','./js/vendor/chart.umd.min.js',

@@ -3,6 +3,7 @@ import { parseAlipayCsv } from './parse-alipay.js';
 import { readWechatFile, parseWechatRows } from './parse-wechat.js';
 import { normalizeAlipay, normalizeWechat } from './normalize.js';
 import { fingerprintFile } from './identity.js';
+import { isGenericCsv, parseGenericCsv } from './generic-csv.js';
 
 // 浏览器和测试共用的完整导入路径，确保每笔无订单号记录也有文件及行身份。
 export async function fileToTransactions(file) {
@@ -11,6 +12,10 @@ export async function fileToTransactions(file) {
     throw new Error('不支持的文件类型：' + file.name);
   const buffer = await file.arrayBuffer();
   const fileFingerprint = await fingerprintFile(buffer);
+  if (extension === 'csv') {
+    const text = decodeSmart(buffer);
+    if (isGenericCsv(text)) return parseGenericCsv(text, { fileFingerprint });
+  }
   const rows = extension === 'csv'
     ? parseAlipayCsv(decodeSmart(buffer))
     : parseWechatRows(await readWechatFile(file, buffer));

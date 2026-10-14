@@ -48,7 +48,7 @@ test('存储层拒绝手动、收入及不存在的记录调整', async () => {
   await assert.rejects(saveExpenseAdjustment('missing', 'include'), /只能调整/);
 });
 
-test('导出清空恢复完整保留三种处理结果及旧记录，备份结构不变', async () => {
+test('导出清空恢复完整保留三种处理结果及旧记录，扩展字段不改变交易内容', async () => {
   const originals = ['include','exclude','amount'].map((action,i) => ({ ...base, id:`review-${i}` }));
   const legacy = { ...base, id:'legacy', status:'交易成功' };
   await saveTransactions([...originals, legacy]);
@@ -61,7 +61,7 @@ test('导出清空恢复完整保留三种处理结果及旧记录，备份结�
   globalThis.document = { createElement: () => ({ click: () => {} }) };
   await exportBackup();
   const json = await blob.text();
-  assert.deepEqual(Object.keys(JSON.parse(json)).sort(), ['mem','txns']);
+  assert.deepEqual(Object.keys(JSON.parse(json)).sort(), ['mem','snapshots','txns']);
   await clearAllData();
   assert.deepEqual(await loadAllTransactions(), []);
   await importBackup({ text:async () => json });

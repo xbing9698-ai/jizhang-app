@@ -16,7 +16,7 @@ const FALLBACK = ICON_PATHS['其他'];
 
 // 返回一段 <svg> 字符串。size 像素；描边用 currentColor。
 export function iconSvg(category, size = 20) {
-  const inner = ICON_PATHS[category] || FALLBACK;
+  const inner = Object.hasOwn(ICON_PATHS, category) ? ICON_PATHS[category] : FALLBACK;
   return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" ` +
     `stroke="currentColor" stroke-width="2" stroke-linecap="round" ` +
     `stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;

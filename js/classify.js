@@ -3,6 +3,8 @@ export const CATEGORIES = ['餐饮','交通','购物','学习教育','娱乐休�
 export const INCOME_CATEGORIES = ['工资','退款 / 返款','转账收入','兼职 / 其他收入','其他'];
 
 export function transactionCategories(t) {
+  if (t?.importFormat === 'generic-csv')
+    return [...new Set([...(t.direction === '收入' ? INCOME_CATEGORIES : CATEGORIES),t.myCategory,t.rawCategory].filter(Boolean))];
   return t?.source === '手动' && t.direction === '收入' ? INCOME_CATEGORIES : CATEGORIES;
 }
 

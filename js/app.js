@@ -10,6 +10,8 @@ import { billingPeriodRange, currentBillingPeriod, customDateRange, allTimeRange
 import { renderCategoryPie, renderTrend, colorForCategory } from './charts.js';
 import { iconSvg } from './icons.js';
 import { isManualTransaction } from './manual.js';
+import { isReconciledDuplicate, reconciliationCandidates } from './reconciliation.js';
+import { setupLedgerTools } from './ledger-tools.js';
 import { filterDetails, sortTransactions } from './detail.js';
 import { newQuickEntry, keypadAmount, createQuickTransaction, setQuickDirection } from './quick-entry.js';
 import { countedExpenseAmount, isValidCountedAmount, canAdjustTransaction, needsReview, filterNeedsReview } from './review.js';
@@ -28,7 +30,8 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function classifyAll() {
-  for (const t of transactions) t.myCategory = resolveCategory(t, memory);
+  // 已保存的分类属于用户数据；只补齐缺失分类，不重置历史分类。
+  for (const t of transactions) if (!t.myCategory) t.myCategory = resolveCategory(t, memory);
 }
 
 // ===== 标签切换 =====
@@ -52,15 +55,17 @@ async function onFiles(files) {
   try {
     let incoming = [];
     for (const f of files) incoming.push(...await fileToTransactions(f));
+    for (const t of incoming) t.myCategory = resolveCategory(t, memory);
     const { merged, added, skipped } = mergeTransactions(transactions, incoming);
+    const existingIds = new Set(transactions.map(t => t.id));
+    await saveTransactions(merged.filter(t => !existingIds.has(t.id)));
     transactions = merged;
-    classifyAll();
-    await saveTransactions(transactions);
     lastImport = { added, skipped };
     refreshAll();
-    if (!filterNeedsReview(transactions).length)
+    const duplicateCount = reconciliationCandidates(transactions).length;
+    if (!filterNeedsReview(transactions).length && !duplicateCount)
       document.getElementById('quickFeedback').textContent = `已导入：新增 ${added} 条，重复跳过 ${skipped} 条。`;
-    switchView(filterNeedsReview(transactions).length ? 'import' : 'overview');
+    switchView(filterNeedsReview(transactions).length || duplicateCount ? 'import' : 'overview');
   } catch (err) {
     lastImport = null;
     msg.textContent = '导入失败：' + err.message;
@@ -228,6 +233,7 @@ function renderDetail() {
 }
 
 function accountingNote(t) {
+  if (isReconciledDuplicate(t)) return '已与导入记录核对，不计入统计';
   if (t.direction !== '支出') return '';
   if (t.excluded === true) return `原 ${fmtMoney(t.amount)} · 不计入统计`;
   if (t.status === '交易关闭') return `原 ${fmtMoney(t.amount)} · 交易关闭自动不计入`;
@@ -285,6 +291,8 @@ function onOpenAdjustment(e) {
   document.getElementById('adjustmentControls').open = false;
   document.getElementById('transactionDelete').hidden = !isManualTransaction(record);
   document.getElementById('transactionDelete').dataset.id = record.id;
+  const undo = document.getElementById('reconciliationUndo');
+  if (undo) { undo.hidden = !isReconciledDuplicate(record); undo.dataset.id = record.id; }
 
   const amount = document.getElementById('adjustmentAmount');
   amount.max = String(record.amount);
@@ -327,6 +335,17 @@ document.getElementById('adjustmentClose').addEventListener('click', () => {
 adjustmentDialog.addEventListener('cancel', e => { if (document.getElementById('saveCategory').disabled) e.preventDefault(); });
 document.getElementById('saveCategory').addEventListener('click', onChangeCategory);
 document.getElementById('transactionDelete').addEventListener('click', onDeleteManual);
+document.getElementById('reconciliationUndo').addEventListener('click',async e => {
+  const button = e.currentTarget;
+  if (button.disabled) return;
+  button.disabled = true;
+  try {
+    await ledgerTools.undo(button.dataset.id);
+    adjustmentDialog.close();
+    document.getElementById('adjustmentFeedback').textContent = '已撤销核对，手动记录恢复计入统计。';
+  } catch (error) { document.getElementById('categoryMsg').textContent = error.message; }
+  finally { button.disabled = false; }
+});
 adjustmentDialog.addEventListener('close', () => { adjustingId = null; });
 
 async function onDeleteManual(e) {
@@ -415,6 +434,10 @@ function populateCategoryFilter() {
   sel.innerHTML = '<option value="">全部分类</option>' +
     [...new Set([...CATEGORIES,...INCOME_CATEGORIES,...transactions.map(t => t.myCategory).filter(Boolean)])].map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
   sel.value = cur;
+  const source = document.getElementById('filterSource'), selectedSource = source.value;
+  source.innerHTML = '<option value="">全部来源</option>' + [...new Set(['支付宝','微信','手动',...transactions.map(t => t.source).filter(Boolean)])]
+    .map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  source.value = selectedSource;
 }
 ['filterSource', 'filterCategory', 'filterDirection', 'onlyUncat', 'onlyNeedsReview'].forEach(id =>
   document.getElementById(id).addEventListener('change', renderDetail));
@@ -623,6 +646,7 @@ document.getElementById('customRangeForm').addEventListener('submit', e => {
 });
 function refreshAll() {
   refreshReviewNotice();
+  ledgerTools.refresh();
   const mode = !range.start ? 'all' : range.mode === 'custom' ? 'custom' : 'billing';
   document.getElementById('monthPick').value = mode === 'billing' ? range.label : '';
   document.getElementById('billingMonthWrap').hidden = mode !== 'billing';
@@ -647,7 +671,7 @@ document.getElementById('importBackup').addEventListener('change', async e => {
     memory = await loadMemory();
     transactions = await loadAllTransactions();
     classifyAll();
-    await saveTransactions(transactions);
+    await ledgerTools.load();
     refreshAll();
     switchView('overview');
     msg.className = 'import-msg ok';
@@ -660,18 +684,28 @@ document.getElementById('importBackup').addEventListener('change', async e => {
 });
 
 document.getElementById('clearBtn').addEventListener('click', async () => {
-  if (!confirm('确定清空所有账单与商户记忆？此操作不可撤销。')) return;
+  if (!confirm('确定清空所有账单、商户记忆与资产快照？此操作不可撤销。')) return;
   await clearAllData();
   transactions = []; memory = {};
+  await ledgerTools.load();
   refreshAll();
 });
 
 // ===== 启动 =====
+const ledgerTools = setupLedgerTools({
+  getTransactions:() => transactions, getRange:() => range,
+  updateTransaction:updated => { transactions = transactions.map(t => t.id === updated.id ? updated : t); },
+  refreshApp:refreshAll
+});
 (async () => {
-  memory = await loadMemory();
-  transactions = await loadAllTransactions();
-  classifyAll();
-  refreshAll();
+  try {
+    memory = await loadMemory();
+    transactions = await loadAllTransactions();
+    await ledgerTools.load();
+    classifyAll(); refreshAll();
+  } catch (error) {
+    document.getElementById('quickFeedback').textContent = '未能读取本地数据：' + error.message;
+  }
 })();
 
 // ===== Service Worker =====

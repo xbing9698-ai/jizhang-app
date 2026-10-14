@@ -35,3 +35,11 @@ main{max-width:760px;margin:auto;padding:8px 24px 32px}.view{display:none}.view.
 @media(max-width:420px){.topbar{padding:calc(20px + env(safe-area-inset-top)) 20px 12px}.brand-name{font-size:20px}.brand-sub{font-size:10px}main{padding:8px 20px 30px}.kpi-expense .kpi-value{font-size:42px}.kpi-value{font-size:23px}}
 @media(max-height:640px){.quick-sheet{padding-top:6px;padding-bottom:calc(8px + env(safe-area-inset-bottom))}.quick-amount{min-height:48px;padding-bottom:6px}.quick-amount output{font-size:30px}.quick-category{min-height:48px;gap:3px}.quick-keypad{margin-top:10px}.quick-keypad button{min-height:44px}.range-bar{margin-bottom:16px}.kpi-row{gap:14px 20px;margin-bottom:16px}.kpi-expense .kpi-value{font-size:38px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+/* 新工具沿用现有轻量面板，不改变首页与快速记账布局。 */
+.ledger-tools{display:flex;justify-content:center;gap:24px}.ledger-tools .text-button{margin:0}
+.snapshot-row{padding:16px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.snapshot-row strong{font-size:14px;font-weight:550}.snapshot-row p{font-size:12px;color:var(--mute);margin-top:6px}.snapshot-row .text-button{margin:0;flex:1}
+.snapshot-net{display:flex;justify-content:space-between;gap:12px;font-size:14px}.snapshot-net output{font-family:var(--serif);overflow-wrap:anywhere}
+.balance-values{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin-top:24px;font-size:13px}.balance-values dd{text-align:right;overflow-wrap:anywhere;font-family:var(--serif);font-size:16px}.balance-values dt:nth-last-of-type(1),.balance-values dd:last-child{font-size:18px;color:var(--accent);padding-top:12px;border-top:1px solid var(--line)}
+.duplicate-record{padding:14px;background:var(--paper);border-radius:10px;overflow-wrap:anywhere}.duplicate-record strong{font-size:14px;font-weight:550}.duplicate-record p{font-size:12px;color:var(--ink2);margin-top:5px}.duplicate-vs{text-align:center;color:var(--mute);font-size:12px;padding:8px}#duplicateActions{margin-top:16px}#reconciliationUndo{width:100%;margin-top:12px}
+.snapshot-delete-prompt{padding:14px 0;color:var(--accent);font-size:13px}.snapshot-delete-prompt p{margin-bottom:12px;overflow-wrap:anywhere}
