@@ -77,8 +77,35 @@ test('首页当前资产区域位于首页内容内，总账弹窗在页面末�
   // 记一笔与底部导航仍在外层固定容器中。
   assert.ok(html.indexOf('class="global-quick-action"') < html.indexOf('<nav'));
   // 文案：收支差额不得写成当前资产或净资产。
-  assert.match(app, /'累计收支差额' : '收支结余'/);
+  assert.match(app, /'使用以来收支差额'/);
+  assert.match(app, /'收支结余'/);
   assert.match(app, /getElementById\('sumNetLabel'\)/);
-  assert.ok(!html.includes('累计收支差额'), '初始 HTML 不应把累计差额写死为资产类文案');
+  assert.ok(!html.includes('累计收支差额'));
+});
+
+test('使用以来的预计/实际净资产区域为窄屏安全布局，不新增底部导航', () => {
+  const block = css.slice(css.indexOf('.net-usage{'), css.indexOf('.usage-net-foot b{') + '.usage-net-foot b{font-family:var(--serif);font-weight:500;color:var(--ink2)}'.length);
+  assert.ok(block.length > 400, '应能定位到使用以来样式块');
+  const fixed = [...block.matchAll(/(?:^|[;{}])((?:min-|max-)?width)\s*:\s*([0-9]+)px/g)].filter(m => Number(m[2]) >= 320);
+  assert.deepEqual(fixed.map(m => m[1] + ':' + m[2]), [], '不应使用 >=320px 的固定宽度');
+  // 长标签与长金额都能换行，行内使用两端对齐而不是固定列宽。
+  assert.match(css, /\.net-usage-values li\{[^}]*justify-content:space-between/);
+  assert.match(css, /\.net-usage-values b\{[^}]*overflow-wrap:anywhere/);
+  assert.match(css, /\.usage-net-row\{[^}]*justify-content:space-between/);
+  assert.match(css, /\.usage-net-value\{[^}]*overflow-wrap:anywhere/);
+  assert.match(css, /\.usage-net-meta\{[^}]*overflow-wrap:anywhere/);
+  assert.match(css, /\.usage-net-note\{[^}]*overflow-wrap:anywhere/);
+  // 新区域仍在首页内，不参与固定定位，不改变底部导航项。
+  for (const id of ['netUsage','usageSnapshotSetup','netStartHint','netStartList','usageEstimatedNet',
+    'netStartValue','netStartIncome','netStartExpense','usageNetCard','usageActualNet','usageActualMeta',
+    'usageDiffRow','usageDiff','usageDiffNote','usageFlowNet'])
+    assert.ok(html.includes(`id="${id}"`), `缺少 ${id}`);
+  assert.ok(!html.includes('id="usageNetCard" style'));
+  const nav = html.match(/<nav[\s\S]*?<\/nav>/)[0];
+  assert.deepEqual([...nav.matchAll(/data-view="([^"]+)"/g)].map(m => m[1]), ['overview','detail','import']);
+  // 使用以来区域位于首页内容内。
+  assert.ok(html.indexOf('id="kpi-row"') === -1);
+  assert.ok(html.indexOf('class="kpi-row"') < html.indexOf('id="usageNetCard"'));
+  assert.ok(html.indexOf('id="usageNetCard"') < html.indexOf('id="view-detail"'));
 });
 

@@ -6,24 +6,28 @@ import {
   groupByCounterparty,
   buildPeriodTable
 } from './aggregate.js';
-import { billingPeriodRange, currentBillingPeriod, customDateRange, allTimeRange, rangeText, prevPeriodRange, filterTransactionsByRange, billingPeriodLabel } from './period.js';
+import { billingPeriodRange, currentBillingPeriod, customDateRange, allTimeRange, usageTimeRange, rangeText, prevPeriodRange, filterTransactionsByRange, billingPeriodLabel } from './period.js';
 import { renderCategoryPie, renderTrend, colorForCategory } from './charts.js';
 import { iconSvg } from './icons.js';
 import { isManualTransaction } from './manual.js';
 import { isReconciledDuplicate, reconciliationCandidates } from './reconciliation.js';
 import { setupLedgerTools } from './ledger-tools.js';
 import { setupAssetLedgerUI } from './asset-ledger-ui.js';
+import { USAGE_START_DATE, findStartingSnapshot, estimateCurrentNet, checkDifference } from './estimated-assets.js';
+import { hasLedgerAccounts, calculateLedgerTotals } from './asset-ledger.js';
 import { filterDetails, sortTransactions } from './detail.js';
 import { newQuickEntry, keypadAmount, createQuickTransaction, setQuickDirection } from './quick-entry.js';
 import { countedExpenseAmount, isValidCountedAmount, canAdjustTransaction, needsReview, filterNeedsReview } from './review.js';
 import {
   saveTransactions, loadAllTransactions, loadMemory,
-  clearAllData, exportBackup, importBackup, deleteManualTransaction, saveExpenseAdjustment, saveTransactionCategory
+  clearAllData, exportBackup, importBackup, deleteManualTransaction, saveExpenseAdjustment, saveTransactionCategory,
+  loadSnapshots
 } from './storage.js';
 
 // ===== 状态 =====
 let transactions = [];
 let memory = {};
+let snapshots = [];
 let range = currentBillingPeriod();
 let lastImport = null;
 
@@ -504,7 +508,7 @@ function directionClass(t) {
 
 // 环比变化文字（本期 vs 上期），返回 {text, cls}
 function deltaInfo(cur, prev) {
-  if (prev == null || range.label === '全部' || range.mode === 'custom') return { text: '', cls: '' };
+  if (prev == null || range.label === '全部' || range.mode === 'custom' || range.mode === 'usage') return { text: '', cls: '' };
   if (prev === 0) return cur > 0 ? { text: '较上一账期新增', cls: 'up' } : { text: '', cls: '' };
   const pct = (cur - prev) / prev * 100;
   const arrow = pct > 0 ? '↑' : pct < 0 ? '↓' : '';
@@ -581,6 +585,63 @@ function renderPeriodTable() {
     '<div class="period-values"><span>支出 <b>' + fmtMoney(r.expense) + '</b></span><span>收入 <b>' + fmtMoney(r.income) + '</b></span><span>结余 <b>' + fmtMoney(r.net) + '</b></span></div></div>').join('');
 }
 
+// "使用以来"：主数字改成按起始快照推算的预计当前净资产，收支差额降级为说明。
+function renderUsageNet(s) {
+  const card = document.getElementById('usageNetCard');
+  card.hidden = false;
+
+  const starting = findStartingSnapshot(snapshots);
+  const estimate = starting ? estimateCurrentNet(starting, s) : null;
+
+  document.getElementById('sumNetLabel').textContent = '使用以来收支差额';
+  document.getElementById('sumNet').textContent = fmtMoney(s.net);
+  document.getElementById('netSub').textContent = '仅表示使用以来收入减支出，不等于当前资产';
+  document.getElementById('netUsage').hidden = false;
+  document.getElementById('usageFlowNet').textContent = fmtMoney(s.net);
+
+  const hint = document.getElementById('netStartHint');
+  const list = document.getElementById('netStartList');
+  const setup = document.getElementById('usageSnapshotSetup');
+  if (!estimate) {
+    // 没有 2026-10-15 快照：不猜、不反推，也不显示预计净资产。
+    hint.hidden = false;
+    hint.textContent = `尚未设置起始净资产：请记录 ${USAGE_START_DATE} 的资产快照后计算预计当前净资产。`;
+    list.hidden = true;
+    setup.hidden = false;
+  } else {
+    hint.hidden = true;
+    list.hidden = false;
+    setup.hidden = true;
+    document.getElementById('usageEstimatedNet').textContent = fmtMoney(estimate.estimatedNetAssets);
+    document.getElementById('netStartValue').textContent = fmtMoney(estimate.startNetAssets);
+    document.getElementById('netStartIncome').textContent = fmtMoney(estimate.income);
+    document.getElementById('netStartExpense').textContent = fmtMoney(estimate.expense);
+  }
+
+  // 实际当前净资产来自资产总账，只在用户维护总账时改变；不自动跟随流水。
+  const ledger = assetLedgerUI.getLedger();
+  const hasAccounts = hasLedgerAccounts(ledger);
+  const actual = hasAccounts ? calculateLedgerTotals(ledger.accounts).netAssets : null;
+  document.getElementById('usageActualNet').textContent = actual == null ? '—' : fmtMoney(actual);
+  document.getElementById('usageActualMeta').textContent = hasAccounts
+    ? (ledger.updatedAt ? `来自资产总账 · 更新于 ${ledger.updatedAt.slice(0, 10)}` : '来自资产总账')
+    : '还没有建立资产总账';
+
+  const diff = checkDifference(estimate ? estimate.estimatedNetAssets : null, actual);
+  const diffRow = document.getElementById('usageDiffRow');
+  const diffNote = document.getElementById('usageDiffNote');
+  if (!diff) {
+    diffRow.hidden = true;
+    diffNote.hidden = true;
+    return;
+  }
+  diffRow.hidden = false;
+  diffNote.hidden = false;
+  document.getElementById('usageDiff').textContent = diff.aligned
+    ? '账目与资产一致' : `${diff.difference > 0 ? '+' : '−'}${fmtMoney(Math.abs(diff.difference))}`;
+  diffNote.textContent = diff.aligned ? '实际当前净资产 − 预计当前净资产' : '待核对差额 = 实际 − 预计';
+}
+
 function refreshDashboard() {
   const s = summarize(transactions, range);
   const previousRange = prevPeriodRange(range);
@@ -588,9 +649,6 @@ function refreshDashboard() {
 
   document.getElementById('sumExpense').textContent = fmtMoney(s.totalExpense);
   document.getElementById('sumIncome').textContent = fmtMoney(s.totalIncome);
-  document.getElementById('sumNet').textContent = fmtMoney(s.net);
-  // 收支差额不是净资产；只有资产总账才回答"现在有多少钱"。
-  document.getElementById('sumNetLabel').textContent = range.mode === 'all' ? '累计收支差额' : '收支结余';
   document.getElementById('rangeLabel').textContent = rangeText(range);
   document.getElementById('expenseCount').textContent = s.count ? `${s.count} 笔` : '';
 
@@ -600,7 +658,18 @@ function refreshDashboard() {
   const iEl = document.getElementById('incomeDelta');
   eEl.textContent = ed.text; eEl.className = 'kpi-delta ' + ed.cls;
   iEl.textContent = idd.text; iEl.className = 'kpi-delta ' + idd.cls;
-  document.getElementById('netSub').textContent = s.net >= 0 ? '收入减支出' : '支出多于收入';
+
+  const usage = range.mode === 'usage';
+  document.getElementById('netUsage').hidden = !usage;
+  document.getElementById('usageNetCard').hidden = !usage;
+  if (usage) {
+    renderUsageNet(s);
+  } else {
+    // 本账期与自定义范围只回答"这段时间收入减支出是多少"。
+    document.getElementById('sumNetLabel').textContent = '收支结余';
+    document.getElementById('sumNet').textContent = fmtMoney(s.net);
+    document.getElementById('netSub').textContent = s.net >= 0 ? '收入减支出' : '支出多于收入';
+  }
 
   const hasData = Object.keys(s.byCategory).length > 0;
   document.querySelector('.pie-wrap').hidden = !hasData;
@@ -627,8 +696,13 @@ document.getElementById('monthPick').addEventListener('change', e => {
   refreshAll();
 });
 document.getElementById('allRange').addEventListener('click', () => {
-  range = allTimeRange();
+  range = usageTimeRange();
   refreshAll();
+});
+// 没有 2026-10-15 起始快照时的入口：本质就是创建/编辑那一天的资产快照。
+document.getElementById('usageSnapshotSetup').addEventListener('click', async () => {
+  try { await ledgerTools.newSnapshot(USAGE_START_DATE); }
+  catch (error) { document.getElementById('quickFeedback').textContent = error.message; }
 });
 const customDialog = document.getElementById('customRangeDialog');
 document.getElementById('billingRange').addEventListener('click', () => { range = currentBillingPeriod(); refreshAll(); });
@@ -650,10 +724,11 @@ document.getElementById('customRangeForm').addEventListener('submit', e => {
 function refreshAll() {
   refreshReviewNotice();
   ledgerTools.refresh();
-  const mode = !range.start ? 'all' : range.mode === 'custom' ? 'custom' : 'billing';
+  const mode = !range.start ? 'all' : range.mode === 'custom' ? 'custom' : range.mode === 'usage' ? 'usage' : 'billing';
   document.getElementById('monthPick').value = mode === 'billing' ? range.label : '';
   document.getElementById('billingMonthWrap').hidden = mode !== 'billing';
-  for (const [id,value] of [['billingRange','billing'],['customRangeOpen','custom'],['allRange','all']]) document.getElementById(id).setAttribute('aria-pressed', String(mode === value));
+  for (const [id,value] of [['billingRange','billing'],['customRangeOpen','custom'],['allRange','all']])
+    document.getElementById(id).setAttribute('aria-pressed', String(value === mode || (value === 'all' && mode === 'usage')));
   populateCategoryFilter();
   renderDetail();
   refreshDashboard();
@@ -676,6 +751,7 @@ document.getElementById('importBackup').addEventListener('change', async e => {
     classifyAll();
     await ledgerTools.load();
     await assetLedgerUI.load();
+    snapshots = await loadSnapshots();
     refreshAll();
     switchView('overview');
     msg.className = 'import-msg ok';
@@ -690,7 +766,7 @@ document.getElementById('importBackup').addEventListener('change', async e => {
 document.getElementById('clearBtn').addEventListener('click', async () => {
   if (!confirm('确定清空所有账单、商户记忆、资产快照与资产总账？此操作不可撤销。')) return;
   await clearAllData();
-  transactions = []; memory = {};
+  transactions = []; memory = {}; snapshots = [];
   await ledgerTools.load();
   await assetLedgerUI.load();
   refreshAll();
@@ -712,6 +788,7 @@ const assetLedgerUI = setupAssetLedgerUI({
     transactions = await loadAllTransactions();
     await ledgerTools.load();
     await assetLedgerUI.load();
+    snapshots = await loadSnapshots();
     classifyAll(); refreshAll();
   } catch (error) {
     document.getElementById('quickFeedback').textContent = '未能读取本地数据：' + error.message;

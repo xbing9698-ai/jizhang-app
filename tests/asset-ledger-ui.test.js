@@ -175,11 +175,11 @@ test('没有账户时拒绝从空总账生成快照', async () => {
   assert.deepEqual(await loadSnapshots(), []);
 });
 
-test('首页结余文案按范围区分：本账期/自定义为收支结余，全部时间为累计收支差额', () => {
+test('首页结余文案按范围区分：本账期/自定义为收支结余，使用以来为收支差额与预计净资产', () => {
   assert.ok(html.includes('id="sumNetLabel"'));
-  assert.match(app, /range\.mode === 'all' \? '累计收支差额' : '收支结余'/);
+  assert.match(app, /document\.getElementById\('sumNetLabel'\)\.textContent = '收支结余'/);
+  assert.match(app, /document\.getElementById\('sumNetLabel'\)\.textContent = '使用以来收支差额'/);
   // 收支差额不得写成当前资产、账户余额或净资产。
-  const label = app.slice(app.indexOf("getElementById('sumNetLabel')"), app.indexOf("getElementById('sumNetLabel')") + 120);
-  for (const forbidden of ['当前资产','账户余额','净资产']) assert.ok(!label.includes(forbidden));
+  assert.ok(!/sumNetLabel'\)\.textContent = '(当前资产|账户余额|净资产)'/.test(app));
   assert.ok(html.includes('id="assetNet"'));
 });

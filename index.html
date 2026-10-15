@@ -31,7 +31,7 @@
         <div class="range-modes" role="group" aria-label="时间范围">
           <button type="button" id="billingRange" aria-pressed="true">本账期</button>
           <button type="button" id="customRangeOpen" aria-pressed="false">自定义</button>
-          <button type="button" id="allRange" aria-pressed="false">全部时间</button>
+          <button type="button" id="allRange" aria-pressed="false">使用以来</button>
         </div>
         <div class="range-context">
           <label id="billingMonthWrap" class="billing-month"><span class="sr-only">选择账期</span><input type="month" id="monthPick" aria-label="选择账期"></label>
@@ -48,6 +48,16 @@
           <span class="kpi-label" id="sumNetLabel">收支结余</span>
           <span class="kpi-value" id="sumNet">¥0.00</span>
           <span class="kpi-sub" id="netSub"></span>
+          <div class="net-usage" id="netUsage" hidden>
+            <button type="button" class="text-button net-usage-setup" id="usageSnapshotSetup" hidden>设置起始资产快照</button>
+            <p class="net-usage-hint" id="netStartHint" hidden></p>
+            <ol class="net-usage-values" id="netStartList" hidden>
+              <li><span>预计当前净资产</span><b id="usageEstimatedNet">—</b></li>
+              <li><span>起始净资产</span><b id="netStartValue">¥0.00</b></li>
+              <li><span>使用以来收入</span><b id="netStartIncome">¥0.00</b></li>
+              <li><span>使用以来支出</span><b id="netStartExpense">¥0.00</b></li>
+            </ol>
+          </div>
         </div>
         <div class="kpi-card kpi-expense">
           <span class="kpi-label">支出</span>
@@ -59,6 +69,20 @@
           <span class="kpi-value" id="sumIncome">¥0.00</span>
           <span class="kpi-delta" id="incomeDelta"></span>
         </div>
+      </div>
+
+      <div class="card usage-net-card" id="usageNetCard" hidden aria-label="使用以来净资产核对">
+        <div class="usage-net-row">
+          <span class="usage-net-label">实际当前净资产</span>
+          <span class="usage-net-value" id="usageActualNet">—</span>
+        </div>
+        <p class="usage-net-meta" id="usageActualMeta"></p>
+        <p class="usage-net-row usage-net-diff" id="usageDiffRow" hidden>
+          <span class="usage-net-label">待核对差额</span>
+          <span class="usage-net-value" id="usageDiff">—</span>
+        </p>
+        <p class="usage-net-note" id="usageDiffNote" hidden>实际 − 预计</p>
+        <p class="section-note usage-net-foot">使用以来收入减支出 <b id="usageFlowNet">¥0.00</b>，仅表示区间收支差额，不等于当前资产。</p>
       </div>
 
       <div class="card category-surface">

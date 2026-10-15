@@ -38,12 +38,12 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
   function openSnapshots() { cancelSnapshotDelete(); el('snapshotListMsg').textContent = ''; el('snapshotsDialog').showModal(); }
   el('snapshotsOpen').addEventListener('click',openSnapshots);
   el('snapshotsClose').addEventListener('click',() => el('snapshotsDialog').close());
-  function editSnapshot(id = null) {
+  function editSnapshot(id = null, { date = null } = {}) {
     cancelSnapshotDelete();
     editingId = id;
     const s = snapshots.find(s => s.id === id);
     el('snapshotEditTitle').textContent = s ? '编辑快照' : '新增快照';
-    el('snapshotDate').value = s?.date || todayDate();
+    el('snapshotDate').value = s?.date || date || todayDate();
     el('snapshotAssets').value = s ? s.totalAssets : '';
     el('snapshotLiabilities').value = s ? s.totalLiabilities : '0';
     el('snapshotNote').value = s?.note || '';
@@ -57,6 +57,15 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
     catch { el('snapshotNet').textContent = '—'; }
   }
   el('snapshotAdd').addEventListener('click',() => editSnapshot());
+  // 供"设置起始资产快照"复用：先读最新快照，若该日期已有快照就直接进入编辑，不覆盖。
+  async function newSnapshot(date) {
+    await load();
+    if (el('snapshotsDialog').open) el('snapshotsDialog').close();
+    const existing = snapshots.find(s => s.date === date);
+    el('snapshotListMsg').textContent = existing ? `编辑 ${date} 的资产快照。` : `新增 ${date} 的资产快照。`;
+    editSnapshot(existing?.id || null, { date });
+    return existing || null;
+  }
   // 手工快照仍可独立填写；这里只是把资产总账的自动合计填进表单，保存仍需点击。
   el('snapshotFromLedgerFill').addEventListener('click',async () => {
     try {
@@ -167,7 +176,7 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
     const url = URL.createObjectURL(new Blob([GENERIC_CSV_TEMPLATE],{type:'text/csv;charset=utf-8'}));
     const a = document.createElement('a'); a.href = url; a.download = '通用账单模板.csv'; a.click(); URL.revokeObjectURL(url);
   });
-  return { load, refresh, async undo(id) {
+  return { load, refresh, newSnapshot, async undo(id) {
     const updated = await saveReconciliation(id,null,'undo'); updateTransaction(updated); refreshApp();
   } };
 }

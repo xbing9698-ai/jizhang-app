@@ -19,7 +19,7 @@ export function latestCompletedPeriod(now = new Date()) {
 }
 
 export function prevPeriodRange(range) {
-  if (!range?.end || range.mode === 'custom' || range.mode === 'all') return null;
+  if (!range?.end || range.mode === 'custom' || range.mode === 'all' || range.mode === 'usage') return null;
   const expected = billingPeriodRange(range.end.slice(0, 7));
   if (range.start !== expected.start || range.end !== expected.end) return null;
   return billingPeriodRange(shiftMonth(range.end.slice(0, 7), -1));
@@ -43,7 +43,15 @@ export function allTimeRange() {
   return { start:null, end:null, label:'全部', mode:'all' };
 }
 
+// 正式记账起点：2026-10-15。此前的记录保留、可自定义查看，但不进入"使用以来"统计。
+export const USAGE_START_DATE = '2026-10-15';
+
+export function usageTimeRange() {
+  return { start: USAGE_START_DATE, end: null, label:'使用以来', mode:'usage' };
+}
+
 export function rangeText(range) {
+  if (range?.mode === 'usage') return '使用以来';
   if (!range?.start) return '全部时间';
   return `${range.start.replaceAll('-', '.')} — ${range.end.replaceAll('-', '.')}`;
 }
