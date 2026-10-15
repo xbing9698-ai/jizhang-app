@@ -585,7 +585,7 @@ function renderPeriodTable() {
     '<div class="period-values"><span>支出 <b>' + fmtMoney(r.expense) + '</b></span><span>收入 <b>' + fmtMoney(r.income) + '</b></span><span>结余 <b>' + fmtMoney(r.net) + '</b></span></div></div>').join('');
 }
 
-// "使用以来"：主数字改成按起始快照推算的预计当前净资产，收支差额降级为说明。
+// "使用以来"：主数字是预计当前净资产，收支差额降为次级信息。
 function renderUsageNet(s) {
   const card = document.getElementById('usageNetCard');
   card.hidden = false;
@@ -593,9 +593,7 @@ function renderUsageNet(s) {
   const starting = findStartingSnapshot(snapshots);
   const estimate = starting ? estimateCurrentNet(starting, s) : null;
 
-  document.getElementById('sumNetLabel').textContent = '使用以来收支差额';
-  document.getElementById('sumNet').textContent = fmtMoney(s.net);
-  document.getElementById('netSub').textContent = '仅表示使用以来收入减支出，不等于当前资产';
+  document.getElementById('sumNetLabel').textContent = estimate ? '预计当前净资产' : '尚未设置起始净资产';
   document.getElementById('netUsage').hidden = false;
   document.getElementById('usageFlowNet').textContent = fmtMoney(s.net);
 
@@ -603,16 +601,19 @@ function renderUsageNet(s) {
   const list = document.getElementById('netStartList');
   const setup = document.getElementById('usageSnapshotSetup');
   if (!estimate) {
-    // 没有 2026-10-15 快照：不猜、不反推，也不显示预计净资产。
+    // 没有 2026-10-15 快照：主区域不显示任何数字，收支差额只作次级信息，绝不冒充净资产。
+    document.getElementById('sumNet').textContent = '';
+    document.getElementById('netSub').textContent = '使用以来收入减支出，仅表示区间收支差额，不等于当前资产';
     hint.hidden = false;
     hint.textContent = `尚未设置起始净资产：请记录 ${USAGE_START_DATE} 的资产快照后计算预计当前净资产。`;
     list.hidden = true;
     setup.hidden = false;
   } else {
+    document.getElementById('sumNet').textContent = fmtMoney(estimate.estimatedNetAssets);
+    document.getElementById('netSub').textContent = '使用以来收入减支出，仅表示区间收支差额，不等于当前资产';
     hint.hidden = true;
     list.hidden = false;
     setup.hidden = true;
-    document.getElementById('usageEstimatedNet').textContent = fmtMoney(estimate.estimatedNetAssets);
     document.getElementById('netStartValue').textContent = fmtMoney(estimate.startNetAssets);
     document.getElementById('netStartIncome').textContent = fmtMoney(estimate.income);
     document.getElementById('netStartExpense').textContent = fmtMoney(estimate.expense);

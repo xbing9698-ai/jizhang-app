@@ -76,15 +76,16 @@ test('首页当前资产区域位于首页内容内，总账弹窗在页面末�
   assert.ok(html.indexOf('id="assetLedgerDialog"') > html.indexOf('</main>'));
   // 记一笔与底部导航仍在外层固定容器中。
   assert.ok(html.indexOf('class="global-quick-action"') < html.indexOf('<nav'));
-  // 文案：收支差额不得写成当前资产或净资产。
-  assert.match(app, /'使用以来收支差额'/);
+  // 文案与层级：使用以来的主数字是预计当前净资产，收支差额只作次级信息。
+  assert.match(app, /'预计当前净资产' : '尚未设置起始净资产'/);
   assert.match(app, /'收支结余'/);
   assert.match(app, /getElementById\('sumNetLabel'\)/);
+  assert.match(html, /<span>使用以来收支差额<\/span><b id="usageFlowNet">/);
   assert.ok(!html.includes('累计收支差额'));
 });
 
 test('使用以来的预计/实际净资产区域为窄屏安全布局，不新增底部导航', () => {
-  const block = css.slice(css.indexOf('.net-usage{'), css.indexOf('.usage-net-foot b{') + '.usage-net-foot b{font-family:var(--serif);font-weight:500;color:var(--ink2)}'.length);
+  const block = css.slice(css.indexOf('.net-usage{'), css.indexOf('.usage-net-note{') + '.usage-net-note{font-size:10px;color:var(--mute);margin-top:4px;text-align:right;overflow-wrap:anywhere}'.length);
   assert.ok(block.length > 400, '应能定位到使用以来样式块');
   const fixed = [...block.matchAll(/(?:^|[;{}])((?:min-|max-)?width)\s*:\s*([0-9]+)px/g)].filter(m => Number(m[2]) >= 320);
   assert.deepEqual(fixed.map(m => m[1] + ':' + m[2]), [], '不应使用 >=320px 的固定宽度');
@@ -95,10 +96,13 @@ test('使用以来的预计/实际净资产区域为窄屏安全布局，不新�
   assert.match(css, /\.usage-net-value\{[^}]*overflow-wrap:anywhere/);
   assert.match(css, /\.usage-net-meta\{[^}]*overflow-wrap:anywhere/);
   assert.match(css, /\.usage-net-note\{[^}]*overflow-wrap:anywhere/);
+  // 预计净资产是主 KPI，使用 .kpi-value 大字号；次级列表不再有放大行。
+  assert.match(css, /\.kpi-net \.kpi-value\{font-size:39px/);
+  assert.ok(!css.includes('.net-usage-values li:first-child b'), '列表首行不应放大成主数字');
   // 新区域仍在首页内，不参与固定定位，不改变底部导航项。
-  for (const id of ['netUsage','usageSnapshotSetup','netStartHint','netStartList','usageEstimatedNet',
+  for (const id of ['netUsage','usageSnapshotSetup','netStartHint','netStartList','usageFlowNet',
     'netStartValue','netStartIncome','netStartExpense','usageNetCard','usageActualNet','usageActualMeta',
-    'usageDiffRow','usageDiff','usageDiffNote','usageFlowNet'])
+    'usageDiffRow','usageDiff','usageDiffNote'])
     assert.ok(html.includes(`id="${id}"`), `缺少 ${id}`);
   assert.ok(!html.includes('id="usageNetCard" style'));
   const nav = html.match(/<nav[\s\S]*?<\/nav>/)[0];

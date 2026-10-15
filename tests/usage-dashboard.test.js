@@ -15,6 +15,7 @@ import { saveSnapshot, saveAssetLedger, loadAssetLedger } from '../js/storage.js
 const root = new URL('../', import.meta.url);
 const html = readFileSync(new URL('index.html', root), 'utf8');
 const app = readFileSync(new URL('js/app.js', root), 'utf8');
+const css = readFileSync(new URL('css/style.css', root), 'utf8');
 
 // 只创建缺失元素的最小 DOM 桩，用于跑真实的 refreshDashboard。
 function stubDom() {
@@ -82,7 +83,7 @@ test('全部时间文案不存在，使用以来存在（按钮、范围文案�
   assert.equal(rangeText(usageTimeRange()), '使用以来');
 });
 
-test('使用以来显示预计净资产、起始净资产、区间收支、实际净资产与待核对差额', () => {
+test('使用以来模式下主KPI是预计当前净资产，收支差额为次级信息', () => {
   const ledger = addAccount(emptyLedger(), { name:'招商银行卡', type:'asset', balance:5020 });
   const el = runDashboard({
     snapshots:[startingSnapshot(5000)], ledger, range: usageTimeRange(),
@@ -91,13 +92,18 @@ test('使用以来显示预计净资产、起始净资产、区间收支、实�
 
   assert.equal(el('usageNetCard').hidden, false);
   assert.equal(el('netUsage').hidden, false);
-  assert.equal(el('sumNetLabel').textContent, '使用以来收支差额');
-  assert.equal(el('sumNet').textContent, '¥-20.00');
-  assert.match(el('netSub').textContent, /不等于当前资产/);
-  assert.equal(el('usageEstimatedNet').textContent, '¥4,980.00');
+  // 最大主数字 = 预计当前净资产（起始 5000 − 支出 20）。
+  assert.equal(el('sumNetLabel').textContent, '预计当前净资产');
+  assert.equal(el('sumNet').textContent, '¥4,980.00');
+  // 收支差额不再是主数字，只在次级列表里出现。
+  assert.notEqual(el('sumNetLabel').textContent, '使用以来收支差额');
+  assert.notEqual(el('sumNet').textContent, '¥-20.00');
+  assert.match(el('netSub').textContent, /仅表示区间收支差额，不等于当前资产/);
+  // 次级信息保留起始净资产、使用以来收入、支出与收支差额。
   assert.equal(el('netStartValue').textContent, '¥5,000.00');
   assert.equal(el('netStartIncome').textContent, '¥0.00');
   assert.equal(el('netStartExpense').textContent, '¥20.00');
+  assert.equal(el('usageFlowNet').textContent, '¥-20.00');
   assert.equal(el('netStartList').hidden, false);
   assert.equal(el('netStartHint').hidden, true);
   assert.equal(el('usageSnapshotSetup').hidden, true);
@@ -106,8 +112,12 @@ test('使用以来显示预计净资产、起始净资产、区间收支、实�
   assert.match(el('usageActualMeta').textContent, /来自资产总账/);
   assert.equal(el('usageDiffRow').hidden, false);
   assert.equal(el('usageDiff').textContent, '+¥40.00');
-  // 累计收支差额降级为说明文字。
-  assert.equal(el('usageFlowNet').textContent, '¥-20.00');
+  // 主 KPI 结构：预计净资产在 netUsage 之前，收支差额在 netUsage 之内。
+  const card = html.slice(html.indexOf('class="kpi-card kpi-net"'), html.indexOf('kpi-expense'));
+  assert.ok(card.indexOf('id="sumNet"') < card.indexOf('id="netUsage"'));
+  assert.ok(card.indexOf('id="usageFlowNet"') > card.indexOf('id="netUsage"'));
+  assert.match(css, /\.kpi-net \.kpi-value\{font-size:39px/);
+  assert.ok(!/\.net-usage-values li:first-child b\{font-size:17px\}/.test(css), '列表首行不应放大成主数字');
 });
 
 test('「设置起始资产快照」复用现有资产快照功能，日期预填且不覆盖已有当日快照', async () => {
@@ -176,23 +186,25 @@ test('使用以来模式下按钮状态与月份控件正确：只有本账期�
   }
 });
 
-test('新增、修改、删除交易后预计当前净资产同步变化', () => {
+test('新增、修改、删除交易后预计当前净资产生效于主KPI并同步变化', () => {
   const snapshots = [startingSnapshot(5000)];
   const ledger = addAccount(emptyLedger(), { name:'现金', type:'asset', balance:100 });
   const base = [tx('e1','2026-10-16T10:00:00','支出',20)];
 
   let el = runDashboard({ transactions:base, snapshots, ledger, range:usageTimeRange() });
-  assert.equal(el('usageEstimatedNet').textContent, '¥4,980.00');
+  assert.equal(el('sumNetLabel').textContent, '预计当前净资产');
+  assert.equal(el('sumNet').textContent, '¥4,980.00');
 
   el = runDashboard({ transactions:[...base, tx('i1','2026-10-17T10:00:00','收入',100)], snapshots, ledger, range:usageTimeRange() });
-  assert.equal(el('usageEstimatedNet').textContent, '¥5,080.00');
+  assert.equal(el('sumNet').textContent, '¥5,080.00');
+  assert.equal(el('usageFlowNet').textContent, '¥80.00');
   assert.equal(el('usageDiff').textContent, '−¥4,980.00');
 
   el = runDashboard({ transactions:[tx('e1','2026-10-16T10:00:00','支出',50)], snapshots, ledger, range:usageTimeRange() });
-  assert.equal(el('usageEstimatedNet').textContent, '¥4,950.00');
+  assert.equal(el('sumNet').textContent, '¥4,950.00');
 
   el = runDashboard({ transactions:[], snapshots, ledger, range:usageTimeRange() });
-  assert.equal(el('usageEstimatedNet').textContent, '¥5,000.00');
+  assert.equal(el('sumNet').textContent, '¥5,000.00');
   assert.equal(el('usageDiff').textContent, '−¥4,900.00');
 });
 
@@ -209,10 +221,12 @@ test('预计净资产复用现有统计口径：退款计入金额、排除项�
     tx('income','2026-10-16T15:00:00','收入',80)
   ];
   const el = runDashboard({ transactions, snapshots:[startingSnapshot(1000)], ledger, range:usageTimeRange() });
-  // 预计 = 1000 + 80 - (30 + 200) = 850
-  assert.equal(el('usageEstimatedNet').textContent, '¥850.00');
+  // 预计 = 1000 + 80 - (30 + 200) = 850，直接体现在主 KPI 上。
+  assert.equal(el('sumNetLabel').textContent, '预计当前净资产');
+  assert.equal(el('sumNet').textContent, '¥850.00');
   assert.equal(el('netStartExpense').textContent, '¥230.00');
   assert.equal(el('netStartIncome').textContent, '¥80.00');
+  assert.equal(el('usageFlowNet').textContent, '¥-150.00');
   // 同一笔交易在"本账期"和"使用以来"用同一口径。
   const billing = currentBillingPeriod(new Date(2026, 10, 1));
   const billingSummary = summarize(transactions, billing);
@@ -236,13 +250,14 @@ test('没有 2026-10-15 快照时不把 0 当起点，显示设置提示与入�
   assert.match(el('netStartHint').textContent, new RegExp(USAGE_START_DATE));
   assert.match(el('netStartHint').textContent, /请记录 2026-10-15 的资产快照/);
   assert.equal(el('usageSnapshotSetup').hidden, false);
-  // 主数字仍显示区间收支差额；绝不显示用 0 或 9000 推出来的预计净资产。
-  assert.equal(el('sumNetLabel').textContent, '使用以来收支差额');
+  // 主区域不出现任何数字：既不显示 0，也不显示用 9000 或收支差额推出来的净资产。
+  assert.equal(el('sumNetLabel').textContent, '尚未设置起始净资产');
+  assert.equal(el('sumNet').textContent, '');
+  assert.notEqual(el('sumNetLabel').textContent, '预计当前净资产');
+  assert.notEqual(el('sumNet').textContent, '¥-20.00');
+  assert.match(el('netSub').textContent, /不等于当前资产/);
   assert.equal(el('netUsage').hidden, false);
-  // 预计净资产整组不渲染：既不写 0，也不写用 9000 推出来的数字，
-  // 界面上只会看到 HTML 里的占位符（—）。
-  assert.equal(el('usageEstimatedNet'), undefined);
-  assert.match(html, /id="usageEstimatedNet">—</);
+  assert.equal(el('usageFlowNet').textContent, '¥-20.00');
   // 没有起始快照就不显示差额。
   assert.equal(el('usageDiffRow').hidden, true);
   // 入口本质是创建/编辑 2026-10-15 的资产快照，复用现有功能。
@@ -265,7 +280,8 @@ test('预计与实际一致时显示账目与资产一致，不用警告文案',
     transactions:[tx('e1','2026-10-16T10:00:00','支出',20)],
     snapshots:[startingSnapshot(5000)], ledger, range: usageTimeRange()
   });
-  assert.equal(el('usageEstimatedNet').textContent, '¥4,980.00');
+  assert.equal(el('sumNetLabel').textContent, '预计当前净资产');
+  assert.equal(el('sumNet').textContent, '¥4,980.00');
   assert.equal(el('usageActualNet').textContent, '¥4,980.00');
   assert.equal(el('usageDiff').textContent, '账目与资产一致');
   assert.equal(el('usageDiffRow').hidden, false);
@@ -298,7 +314,7 @@ test('使用以来不修改任何资产账户余额，实际净资产只在总�
     transactions:[tx('e1','2026-10-16T10:00:00','支出',20)],
     snapshots:[startingSnapshot(300)], ledger, range: usageTimeRange()
   });
-  assert.equal(el('usageEstimatedNet').textContent, '¥280.00');
+  assert.equal(el('sumNet').textContent, '¥280.00');
   assert.equal(el('usageActualNet').textContent, '¥300.00');
   // 记一笔支出后，资产总账与账户余额原样不动。
   const reloaded = await loadAssetLedger();
