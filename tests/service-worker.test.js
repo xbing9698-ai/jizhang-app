@@ -44,10 +44,10 @@ function runWorker({ fetchImpl } = {}) {
     clone() { return this; }
   };
   const cachesImpl = {
-    open: async name => name === 'jizhang-v35' ? shellHandle : runtimeHandle,
+    open: async name => name === 'jizhang-v36' ? shellHandle : runtimeHandle,
     // 浏览器中 caches.match 会依次搜索所有缓存（先建的外壳缓存优先）。
     match: async request => shellHandle.match(request).then(hit => hit || runtimeHandle.match(request)),
-    keys: async () => ['jizhang-v34', 'jizhang-v35', 'jizhang-runtime-v35', 'other-cache'],
+    keys: async () => ['jizhang-v35', 'jizhang-v36', 'jizhang-runtime-v36', 'other-cache'],
     delete: async name => { deleted.push(name); return true; }
   };
   const self = {
@@ -136,7 +136,7 @@ test('激活时只清理旧版本应用缓存，保留运行时缓存与无关�
   let activation;
   worker.listeners.activate({ waitUntil: promise => { activation = promise; } });
   await activation;
-  assert.deepEqual(worker.deleted, ['jizhang-v34']);
+  assert.deepEqual(worker.deleted, ['jizhang-v35']);
 });
 
 test('非GET请求与跨域不透明响应不被拦截或写入缓存', async () => {

@@ -71,45 +71,25 @@ test('底部导航与全局记一笔按钮保持原样，资产总账不新增�
   assert.match(css, /body\{[^}]*padding-bottom:calc\(var\(--bottom-nav-height\) \+ var\(--quick-action-height\)/);
 });
 
-test('首页当前资产区域位于首页内容内，总账弹窗在页面末尾', () => {
-  assert.ok(html.indexOf('id="assetCurrent"') < html.indexOf('id="view-detail"'));
-  assert.ok(html.indexOf('id="assetLedgerDialog"') > html.indexOf('</main>'));
-  // 记一笔与底部导航仍在外层固定容器中。
-  assert.ok(html.indexOf('class="global-quick-action"') < html.indexOf('<nav'));
-  // 文案与层级：使用以来的主数字是预计当前净资产，收支差额只作次级信息。
-  assert.match(app, /'预计当前净资产' : '尚未设置起始净资产'/);
-  assert.match(app, /'收支结余'/);
-  assert.match(app, /getElementById\('sumNetLabel'\)/);
-  assert.match(html, /<span>使用以来收支差额<\/span><b id="usageFlowNet">/);
-  assert.ok(!html.includes('累计收支差额'));
+test('首页资产与收支分开：两块主区域及三个资产二级入口，弹窗仍在页面末尾',()=>{
+  const home=html.slice(html.indexOf('id="view-overview"'),html.indexOf('id="view-detail"'));
+  assert.ok(home.indexOf('id="sumNet"')<home.indexOf('id="assetCurrent"'));
+  assert.ok(home.indexOf('id="assetCurrent"')<home.indexOf('id="pieChart"'));
+  assert.match(home,/>收支概览<\/h2>/);
+  assert.match(app,/getElementById\('sumNetLabel'\)\.textContent = '收支差额'/);
+  const asset=home.slice(home.indexOf('id="assetCurrent"'),home.indexOf('class="card category-surface"'));
+  for(const id of ['assetLedgerOpen','snapshotsOpen','balanceOpen'])assert.ok(asset.includes(`id="${id}"`));
+  assert.ok(html.indexOf('id="assetLedgerDialog"')>html.indexOf('</main>'));
+  assert.ok(html.indexOf('class="global-quick-action"')<html.indexOf('<nav'));
 });
 
-test('使用以来的预计/实际净资产区域为窄屏安全布局，不新增底部导航', () => {
-  const block = css.slice(css.indexOf('.net-usage{'), css.indexOf('.usage-net-note{') + '.usage-net-note{font-size:10px;color:var(--mute);margin-top:4px;text-align:right;overflow-wrap:anywhere}'.length);
-  assert.ok(block.length > 400, '应能定位到使用以来样式块');
-  const fixed = [...block.matchAll(/(?:^|[;{}])((?:min-|max-)?width)\s*:\s*([0-9]+)px/g)].filter(m => Number(m[2]) >= 320);
-  assert.deepEqual(fixed.map(m => m[1] + ':' + m[2]), [], '不应使用 >=320px 的固定宽度');
-  // 长标签与长金额都能换行，行内使用两端对齐而不是固定列宽。
-  assert.match(css, /\.net-usage-values li\{[^}]*justify-content:space-between/);
-  assert.match(css, /\.net-usage-values b\{[^}]*overflow-wrap:anywhere/);
-  assert.match(css, /\.usage-net-row\{[^}]*justify-content:space-between/);
-  assert.match(css, /\.usage-net-value\{[^}]*overflow-wrap:anywhere/);
-  assert.match(css, /\.usage-net-meta\{[^}]*overflow-wrap:anywhere/);
-  assert.match(css, /\.usage-net-note\{[^}]*overflow-wrap:anywhere/);
-  // 预计净资产是主 KPI，使用 .kpi-value 大字号；次级列表不再有放大行。
-  assert.match(css, /\.kpi-net \.kpi-value\{font-size:39px/);
-  assert.ok(!css.includes('.net-usage-values li:first-child b'), '列表首行不应放大成主数字');
-  // 新区域仍在首页内，不参与固定定位，不改变底部导航项。
-  for (const id of ['netUsage','usageSnapshotSetup','netStartHint','netStartList','usageFlowNet',
-    'netStartValue','netStartIncome','netStartExpense','usageNetCard','usageActualNet','usageActualMeta',
-    'usageDiffRow','usageDiff','usageDiffNote'])
-    assert.ok(html.includes(`id="${id}"`), `缺少 ${id}`);
-  assert.ok(!html.includes('id="usageNetCard" style'));
-  const nav = html.match(/<nav[\s\S]*?<\/nav>/)[0];
-  assert.deepEqual([...nav.matchAll(/data-view="([^"]+)"/g)].map(m => m[1]), ['overview','detail','import']);
-  // 使用以来区域位于首页内容内。
-  assert.ok(html.indexOf('id="kpi-row"') === -1);
-  assert.ok(html.indexOf('class="kpi-row"') < html.indexOf('id="usageNetCard"'));
-  assert.ok(html.indexOf('id="usageNetCard"') < html.indexOf('id="view-detail"'));
+test('首页删除预计净资产及快照公式布局，保留窄屏安全的真实资产卡片',()=>{
+  const home=html.slice(html.indexOf('id="view-overview"'),html.indexOf('id="view-detail"'));
+  for(const label of ['预计当前净资产','起始净资产','快照后收入','快照后支出','快照后收支差额'])assert.ok(!home.includes(label));
+  for(const id of ['netUsage','netStartList','usageNetCard','usageDiff'])assert.ok(!html.includes(`id="${id}"`));
+  assert.ok(!css.includes('.net-usage{'));assert.ok(!css.includes('.usage-net-card{'));
+  assert.match(css,/\.asset-actions\{[^}]*flex-wrap:wrap/);
+  assert.match(css,/\.asset-net-value\{[^}]*overflow-wrap:anywhere/);
+  const nav=html.match(/<nav[\s\S]*?<\/nav>/)[0];
+  assert.deepEqual([...nav.matchAll(/data-view="([^"]+)"/g)].map(m=>m[1]),['overview','detail','import']);
 });
-

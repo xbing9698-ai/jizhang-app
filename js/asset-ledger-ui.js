@@ -28,6 +28,7 @@ export function setupAssetLedgerUI({ refreshApp, refreshSnapshots }) {
     const has = hasLedgerAccounts(ledger);
     el('assetCurrentEmpty').hidden = has;
     el('assetCurrentBody').hidden = !has;
+    el('assetLedgerOpen').hidden = !has;
     if (!has) return;
     const totals = calculateLedgerTotals(ledger.accounts);
     el('assetNet').textContent = money(totals.netAssets);

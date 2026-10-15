@@ -7,7 +7,8 @@ test('首页按结余、分类组织，保留全部时间控件及资产入口',
   const page=html.slice(html.indexOf('id="view-overview"'),html.indexOf('id="view-detail"'));
   assert.ok(!page.includes('id="quickEntryOpen"'));
   assert.ok(page.indexOf('id="sumNet"')<page.indexOf('id="pieChart"'));
-  assert.ok(page.indexOf('id="pieChart"')<page.indexOf('id="snapshotsOpen"'));
+  assert.ok(page.indexOf('id="sumNet"')<page.indexOf('id="assetCurrent"'));
+  assert.ok(page.indexOf('id="assetCurrent"')<page.indexOf('id="pieChart"'));
   for(const id of ['billingRange','customRangeOpen','allRange','monthPick','sumIncome','sumExpense','snapshotsOpen','balanceOpen','trendChart','periodRows'])assert.ok(page.includes('id="'+id+'"'));
 });
 test('导入分组保留实际文件和备份控件，记账入口只有共用的底部按钮',()=>{

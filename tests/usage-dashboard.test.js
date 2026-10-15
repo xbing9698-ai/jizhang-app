@@ -1,176 +1,157 @@
-import test from 'node:test';
+import {test,afterEach} from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-import { IDBFactory } from 'fake-indexeddb';
-import {
-  usageTimeRange, currentBillingPeriod, customDateRange, rangeText,
-  filterTransactionsByRange, prevPeriodRange, USAGE_START_DATE, allTimeRange
-} from '../js/period.js';
-import { summarize, buildPeriodTable } from '../js/aggregate.js';
-import { findStartingSnapshot, estimateCurrentNet, checkDifference } from '../js/estimated-assets.js';
-import { hasLedgerAccounts, calculateLedgerTotals, emptyLedger, addAccount } from '../js/asset-ledger.js';
-import { saveSnapshot, saveAssetLedger, loadAssetLedger } from '../js/storage.js';
-import { summarizeSnapshotChanges } from '../js/snapshots.js';
-
-const root = new URL('../', import.meta.url);
-const html = readFileSync(new URL('index.html', root), 'utf8');
-const app = readFileSync(new URL('js/app.js', root), 'utf8');
-const css = readFileSync(new URL('css/style.css', root), 'utf8');
-
-// 只创建缺失元素的最小 DOM 桩，用于跑真实的 refreshDashboard。
-function stubDom() {
-  const elements = new Map();
-  const create = id => ({ id, hidden:false, disabled:false, value:'', textContent:'', innerHTML:'',
-    className:'', style:{}, handlers:{}, setAttribute(){}, addEventListener(){}, showModal(){}, close(){}, scrollIntoView(){} });
-  globalThis.document = {
-    getElementById: id => { if (!elements.has(id)) elements.set(id, create(id)); return elements.get(id); },
-    querySelector: () => elements.get('__pieWrap'),
-    querySelectorAll: () => []
-  };
-  elements.set('__pieWrap', create('__pieWrap'));
-  return elements;
+import {IDBFactory} from 'fake-indexeddb';
+import {usageTimeRange,currentBillingPeriod,billingPeriodRange,customDateRange,allTimeRange,rangeText,filterTransactionsByRange,prevPeriodRange,USAGE_START_DATE} from '../js/period.js';
+import {summarize,buildPeriodTable} from '../js/aggregate.js';
+import {emptyLedger,addAccount} from '../js/asset-ledger.js';
+import {setupAssetLedgerUI} from '../js/asset-ledger-ui.js';
+import {setupLedgerTools} from '../js/ledger-tools.js';
+import {saveAssetLedger,loadAssetLedger,saveSnapshot,loadSnapshots,saveTransactions,loadAllTransactions} from '../js/storage.js';
+const root=new URL('../',import.meta.url);
+const html=readFileSync(new URL('index.html',root),'utf8');
+const app=readFileSync(new URL('js/app.js',root),'utf8');
+const css=readFileSync(new URL('css/style.css',root),'utf8');
+const home=html.slice(html.indexOf('id="view-overview"'),html.indexOf('id="view-detail"'));
+afterEach(()=>{delete globalThis.document;});
+const tx=(id,datetime,direction,amount,extra={})=>({id,datetime,direction,amount,source:'微信',myCategory:'餐饮',...extra});
+const rows=[tx('old-income','2026-10-01T10:00:00','收入',50),tx('salary','2026-10-15T10:00:00','收入',5651.72),
+  tx('opening-expense','2026-10-15T23:59:59','支出',20),tx('expense','2026-10-16T10:00:00','支出',100),
+  tx('income','2026-10-16T12:00:00','收入',200),tx('old-expense','2026-09-01T10:00:00','支出',9)];
+const currentLedger=()=>addAccount(addAccount(addAccount(emptyLedger(),{name:'模拟银行卡',type:'asset',balance:1000}),
+  {name:'模拟现金',type:'asset',balance:200}),{name:'模拟负债',type:'liability',balance:300});
+const money=n=>'¥'+n.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2});
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function stubDom(){
+  const elements=new Map([...html.matchAll(/\bid="([^"]+)"/g)].map(([,id])=>[id,{id,hidden:false,disabled:false,open:false,
+    value:'',textContent:'',innerHTML:'',style:{},className:'',dataset:{},handlers:{},attributes:{},
+    setAttribute(name,value){this.attributes[name]=value;},addEventListener(type,fn){this.handlers[type]=fn;},
+    showModal(){this.open=true;},close(){this.open=false;},scrollIntoView(){}}]));
+  const document={getElementById(id){assert.ok(elements.has(id),`真实DOM缺少 ${id}`);return elements.get(id);},
+    querySelector:()=>({hidden:false}),querySelectorAll:()=>[]};
+  return {document,el:id=>document.getElementById(id)};
+}
+const dashboard=app.slice(app.indexOf('function fmtMoney('),app.indexOf("document.getElementById('monthPick').addEventListener"))
+  .replace(/renderCategoryPie\(/g,'noopChart(').replace(/renderTrend\(/g,'noopChart(')
+  .replace(/function renderCatList\([\s\S]*?\n}\n/,'function renderCatList(){}\n')
+  .replace(/function renderTopList\([\s\S]*?\n}\n/,'function renderTopList(){}\n');
+const refresh=app.slice(app.indexOf('function refreshAll()'),app.indexOf('// ===== 备份 / 清空 ====='));
+async function fixture({ledger=currentLedger(),transactions=rows,range=usageTimeRange(),snapshots=true}={}){
+  globalThis.indexedDB=new IDBFactory();
+  await saveAssetLedger(ledger);await saveTransactions(transactions);
+  if(snapshots)await saveSnapshot({date:USAGE_START_DATE,totalAssets:5481.85,totalLiabilities:0,note:'日末快照（合成）'});
+  const {document,el}=stubDom();globalThis.document=document;
+  const context={document,transactions,range,summarize,prevPeriodRange,rangeText,filterTransactionsByRange,buildPeriodTable,esc,
+    noopChart(){},refreshReviewNotice(){},populateCategoryFilter(){},renderDetail(){}};
+  const tools=setupLedgerTools({getTransactions:()=>context.transactions,getRange:()=>context.range,updateTransaction(){},refreshApp(){}});
+  context.ledgerTools=tools;await tools.load();
+  const assetUI=setupAssetLedgerUI({refreshApp(){},refreshSnapshots:()=>tools.load()});await assetUI.load();
+  vm.createContext(context);vm.runInContext(dashboard+'\n'+refresh,context);context.refreshAll();
+  return {el,assetUI,context,setRange(range){context.range=range;context.refreshAll();}};
 }
 
-// 用真实 app.js 源码切片运行 refreshDashboard，统计与范围函数全部来自真实模块。
-function dashboardSlice() {
-  const start = app.indexOf('function fmtMoney(');
-  const end = app.indexOf("document.getElementById('monthPick').addEventListener");
-  assert.ok(start > 0 && end > start, '应能定位到仪表盘代码块');
-  return app.slice(start, end)
-    .replace(/renderCategoryPie\(/g, 'noopPie(')
-    .replace(/renderTrend\(/g, 'noopTrend(')
-    // 分类与 Top 列表的 DOM 渲染不属于本次逻辑，整体替换为记录调用，避免引入图标/配色依赖。
-    .replace(/function renderCatList\([\s\S]*?\n}\n/, 'function renderCatList(){}\n')
-    .replace(/function renderTopList\([\s\S]*?\n}\n/, 'function renderTopList(){}\n');
-}
-const SLICE = dashboardSlice();
-// app.js 中 renderPeriodTable 用到的最小转义函数。
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
-
-function runDashboard({ transactions = [], snapshots = [], ledger = emptyLedger(), range = usageTimeRange() }) {
-  const elements = stubDom();
-  const context = {
-    document: globalThis.document,
-    esc,
-    transactions, snapshots, range, memory: {}, lastImport: null,
-    summarize, prevPeriodRange, rangeText, filterTransactionsByRange, buildPeriodTable,
-    findStartingSnapshot, estimateCurrentNet, checkDifference, USAGE_START_DATE, summarizeSnapshotChanges,
-    hasLedgerAccounts, calculateLedgerTotals,
-    assetLedgerUI: { getLedger: () => ledger },
-    noopPie(){}, noopTrend(){}
-  };
-  vm.createContext(context);
-  vm.runInContext(SLICE + '\nrefreshDashboard();', context);
-  return id => elements.get(id);
-}
-
-const tx = (id, datetime, direction, amount, extra = {}) =>
-  ({ id, datetime, direction, amount, myCategory:'餐饮', source:'微信', ...extra });
-const startingSnapshot = (netAssets, extras = {}) => ({
-  id:'snapshot:start', date:USAGE_START_DATE, totalAssets:netAssets, totalLiabilities:0,
-  netAssets, note:'', createdAt:'2026-10-15T00:00:00.000Z', ...extras
+test('保留本账期、自定义、使用以来三项时间控件',()=>{
+  for(const id of ['billingRange','customRangeOpen','allRange','monthPick'])assert.ok(home.includes(`id="${id}"`));
+  assert.match(home,/id="allRange"[^>]*>使用以来</);
+  assert.match(css,/#allRange\[aria-pressed="true"\]\) \.range-mode-title::before\{content:'使用以来'\}/);
 });
-
-test('全部时间文案不存在，使用以来存在（按钮、范围文案、窄屏标签）', () => {
-  const rangeBar = html.slice(html.indexOf('class="range-bar"'), html.indexOf('class="kpi-row"'));
-  assert.ok(rangeBar.includes('使用以来'), '时间按钮应显示"使用以来"');
-  assert.ok(!rangeBar.includes('全部时间'), '时间按钮不应再出现"全部时间"');
-  assert.match(html, /id="allRange"[^>]*>使用以来</);
-  assert.ok(!html.includes('累计收支差额'), '不再使用"累计收支差额"作为主数字文案');
-  const css = readFileSync(new URL('css/style.css', root), 'utf8');
-  assert.match(css, /#allRange\[aria-pressed="true"\]\) \.range-mode-title::before\{content:'使用以来'\}/);
-  assert.ok(!css.includes("content:'全部时间'"));
-  assert.equal(rangeText(usageTimeRange()), '使用以来');
+test('首页前两块明确为收支概览与当前资产，分类统计在其后',()=>{
+  assert.match(home,/aria-label="收支概览"/);assert.ok(home.includes('>收支概览</h2>'));
+  assert.ok(home.indexOf('id="sumNet"')<home.indexOf('id="assetCurrent"'));
+  assert.ok(home.indexOf('id="assetCurrent"')<home.indexOf('id="pieChart"'));
 });
-
-test('使用以来模式下主KPI是预计当前净资产，收支差额为次级信息', () => {
-  const ledger = addAccount(emptyLedger(), { name:'招商银行卡', type:'asset', balance:5020 });
-  const el = runDashboard({
-    snapshots:[startingSnapshot(5000)], ledger, range: usageTimeRange(),
-    transactions:[tx('old','2026-10-14T10:00:00','支出',999), tx('e1','2026-10-16T10:00:00','支出',20)]
-  });
-
-  assert.equal(el('usageNetCard').hidden, false);
-  assert.equal(el('netUsage').hidden, false);
-  // 最大主数字 = 预计当前净资产（起始 5000 − 支出 20）。
-  assert.equal(el('sumNetLabel').textContent, '预计当前净资产');
-  assert.equal(el('sumNet').textContent, '¥4,980.00');
-  // 收支差额不再是主数字，只在次级列表里出现。
-  assert.notEqual(el('sumNetLabel').textContent, '使用以来收支差额');
-  assert.notEqual(el('sumNet').textContent, '¥-20.00');
-  assert.match(el('netSub').textContent, /以 2026-10-15 起始资产快照为基准，仅计算快照日期之后的收支/);
-  // 公式明细使用快照后增量；普通使用以来收支差额独立保留。
-  assert.equal(el('netStartValue').textContent, '¥5,000.00');
-  assert.equal(el('netStartIncome').textContent, '¥0.00');
-  assert.equal(el('netStartExpense').textContent, '¥20.00');
-  assert.equal(el('usageFlowNet').textContent, '¥-20.00');
-  assert.equal(el('netStartList').hidden, false);
-  assert.equal(el('netStartHint').hidden, true);
-  assert.equal(el('usageSnapshotSetup').hidden, true);
-  // 实际净资产来自资产总账；10-15 前的 999 元支出不影响预计值。
-  assert.equal(el('usageActualNet').textContent, '¥5,020.00');
-  assert.match(el('usageActualMeta').textContent, /来自资产总账/);
-  assert.equal(el('usageDiffRow').hidden, false);
-  assert.equal(el('usageDiff').textContent, '+¥40.00');
-  // 主 KPI 结构：预计净资产在 netUsage 之前，收支差额在 netUsage 之内。
-  const card = html.slice(html.indexOf('class="kpi-card kpi-net"'), html.indexOf('kpi-expense'));
-  assert.ok(card.indexOf('id="sumNet"') < card.indexOf('id="netUsage"'));
-  assert.ok(card.indexOf('id="usageFlowNet"') > card.indexOf('id="netUsage"'));
-  assert.match(css, /\.kpi-net \.kpi-value\{font-size:39px/);
-  assert.ok(!/\.net-usage-values li:first-child b\{font-size:17px\}/.test(css), '列表首行不应放大成主数字');
+test('首页删除预计资产与快照公式重复区域，真实资产入口全部留在当前资产卡片',()=>{
+  for(const label of ['预计当前净资产','起始净资产','快照后收入','快照后支出','快照后收支差额'])assert.ok(!home.includes(label));
+  for(const id of ['netUsage','usageSnapshotSetup','netStartList','usageNetCard','usageActualNet','usageDiff'])assert.ok(!html.includes(`id="${id}"`));
+  const asset=home.slice(home.indexOf('id="assetCurrent"'),home.indexOf('class="card category-surface"'));
+  for(const id of ['assetNet','assetTotal','assetLiability','assetLedgerOpen','snapshotsOpen','balanceOpen'])assert.ok(asset.includes(`id="${id}"`));
+  assert.ok(!app.includes('renderUsageNet'));
 });
-
-for (const [name, after, expected] of [
-  ['起始日工资不重复计算', [], '¥5,481.85'],
-  ['次日支出100', [tx('expense','2026-10-16T00:00:00','支出',100)], '¥5,381.85'],
-  ['次日支出100并收入200', [tx('expense','2026-10-16T00:00:00','支出',100),tx('income','2026-10-16T12:00:00','收入',200)], '¥5,581.85']
-]) test(`真实仪表盘口径：${name}`, () => {
-  const snapshot = Object.freeze(startingSnapshot(5481.85, {createdAt:'2030-01-01T00:00:00Z'}));
-  const rows = [Object.freeze(tx('salary','2026-10-15T10:00:00','收入',5651.72)), ...after];
-  const el = runDashboard({snapshots:[snapshot],transactions:rows});
-  const ordinary = summarize(rows,usageTimeRange());
-  const changes = summarizeSnapshotChanges(snapshot,rows,usageTimeRange());
-  assert.equal(el('sumNet').textContent,expected);
-  assert.equal(el('netStartValue').textContent,'¥5,481.85');
-  assert.equal(el('netStartIncome').textContent,`¥${changes.totalIncome.toFixed(2)}`);
-  assert.equal(el('netStartExpense').textContent,`¥${changes.totalExpense.toFixed(2)}`);
-  assert.equal(el('netAfterFlowNet').textContent,`¥${changes.net.toFixed(2)}`);
-  assert.equal(el('sumIncome').textContent,`¥${ordinary.totalIncome.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})}`);
-  assert.equal(el('usageFlowNet').textContent,`¥${ordinary.net.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})}`);
-  assert.match(el('netSub').textContent,/仅计算快照日期之后的收支/);
-  assert.equal(rows[0].amount,5651.72);
-  assert.equal(snapshot.netAssets,5481.85);
+for(const [name,range,income,expense,count] of [
+  ['本账期',currentBillingPeriod(new Date(2026,9,16)),5851.72,120,4],
+  ['自定义',customDateRange('2026-10-16','2026-10-16'),200,100,2],
+  ['使用以来',usageTimeRange(),5851.72,120,4],
+  ['上一账期',billingPeriodRange('2026-10'),50,0,1],
+  ['旧全部时间工具',allTimeRange(),5901.72,129,6]
+])test(`${name}收支概览按所选范围统计，资产始终来自当前总账`,async()=>{
+  const {el}=await fixture({range});
+  assert.equal(el('sumNetLabel').textContent,'收支差额');assert.equal(el('sumNet').textContent,money(income-expense));
+  assert.equal(el('sumIncome').textContent,money(income));assert.equal(el('sumExpense').textContent,money(expense));
+  assert.equal(filterTransactionsByRange(rows,range).length,count);
+  assert.equal(el('assetNet').textContent,'¥900.00');assert.equal(el('assetTotal').textContent,'¥1,200.00');assert.equal(el('assetLiability').textContent,'¥300.00');
+  assert.equal(el('expenseDelta').textContent==='',!prevPeriodRange(range));
 });
-
-test('公式标签明确为快照后，普通使用以来收支差额独立保留',()=>{
-  const formula=html.slice(html.indexOf('id="netStartList"'),html.indexOf('</ol>',html.indexOf('id="netStartList"')));
-  assert.ok(formula.includes('快照后收入'));
-  assert.ok(formula.includes('快照后支出'));
-  assert.ok(formula.includes('快照后收支差额'));
-  assert.ok(!formula.includes('使用以来'));
-  assert.match(html,/<span>使用以来收支差额<\/span><b id="usageFlowNet">/);
-});
-
-test('快照后筛选不改变本账期、自定义、全部时间及明细的普通范围',()=>{
-  const rows=[tx('old','2026-10-14T20:00:00','支出',9),tx('salary','2026-10-15T10:00:00','收入',5651.72),
-    tx('same-day','2026-10-15T23:59:59','支出',20),tx('after','2026-10-16T00:00:00','支出',100)];
-  for(const [range,expectedExpense,expectedIncome,count] of [
-    [usageTimeRange(),120,5651.72,3],
-    [currentBillingPeriod(new Date(2026,9,16)),120,5651.72,3],
-    [customDateRange('2026-10-15','2026-10-15'),20,5651.72,2],
-    [allTimeRange(),129,5651.72,4]
-  ]) {
-    const el=runDashboard({transactions:rows,snapshots:[startingSnapshot(5481.85)],range});
-    assert.equal(el('sumExpense').textContent,`¥${expectedExpense.toFixed(2)}`);
-    assert.equal(el('sumIncome').textContent,'¥5,651.72');
-    assert.equal(summarize(rows,range).totalIncome,expectedIncome);
-    assert.equal(filterTransactionsByRange(rows,range).length,count);
-    if(range.mode!=='usage')assert.equal(el('sumNet').textContent,`¥${(expectedIncome-expectedExpense).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})}`);
+test('连续切换时间范围只影响收支与高亮状态，不改资产余额、交易或快照',async()=>{
+  const f=await fixture();const before={ledger:await loadAssetLedger(),txns:await loadAllTransactions(),snapshots:await loadSnapshots()};
+  for(const range of [currentBillingPeriod(new Date(2026,9,16)),customDateRange('2026-10-16','2026-10-16'),usageTimeRange()]){
+    f.setRange(range);const summary=summarize(rows,range);
+    assert.equal(f.el('sumNet').textContent,money(summary.net));
+    assert.equal(f.el('assetNet').textContent,'¥900.00');assert.equal(f.el('assetTotal').textContent,'¥1,200.00');assert.equal(f.el('assetLiability').textContent,'¥300.00');
+    assert.equal(f.el('billingMonthWrap').hidden,range.mode==='custom'||range.mode==='usage');
+    for(const [id,active] of [['billingRange',!range.mode],['customRangeOpen',range.mode==='custom'],['allRange',range.mode==='usage']])
+      assert.equal(f.el(id).attributes['aria-pressed'],String(active));
   }
+  assert.deepEqual(await loadAssetLedger(),before.ledger);assert.deepEqual(await loadAllTransactions(),before.txns);assert.deepEqual(await loadSnapshots(),before.snapshots);
+});
+test('没有起始快照也能显示真实区间收支，不提示设置起点或推算当前资产',async()=>{
+  const {el}=await fixture({snapshots:false});assert.equal(el('sumNet').textContent,'¥5,731.72');assert.equal(el('assetNet').textContent,'¥900.00');
+  assert.deepEqual(await loadSnapshots(),[]);
+});
+test('没有总账显示原有空状态，不使用快照或收支差额冒充资产',async()=>{
+  const {el}=await fixture({ledger:emptyLedger()});assert.equal(el('assetCurrentEmpty').hidden,false);assert.equal(el('assetCurrentBody').hidden,true);
+  assert.equal(el('assetLedgerOpen').hidden,true);assert.equal(el('sumNet').textContent,'¥5,731.72');
+});
+test('真实零余额账户显示零净资产，而非未建立总账',async()=>{
+  const {el}=await fixture({ledger:addAccount(emptyLedger(),{name:'模拟空账户',type:'asset',balance:0})});
+  assert.equal(el('assetCurrentEmpty').hidden,true);assert.equal(el('assetCurrentBody').hidden,false);assert.equal(el('assetNet').textContent,'¥0.00');
+});
+test('总负债高于总资产时如实显示负净资产',async()=>{
+  const ledger=addAccount(addAccount(emptyLedger(),{name:'模拟资产',type:'asset',balance:100}),{name:'模拟负债',type:'liability',balance:150});
+  const {el}=await fixture({ledger});assert.equal(el('assetNet').textContent,'¥-50.00');assert.equal(el('assetTotal').textContent,'¥100.00');assert.equal(el('assetLiability').textContent,'¥150.00');
+});
+test('区间支出继续复用退款实际金额、排除、关闭、中性和导入对账规则',async()=>{
+  const transactions=[tx('refund','2026-10-16T10:00:00','支出',100,{status:'部分退款',countedAmount:30}),
+    tx('excluded','2026-10-16T11:00:00','支出',500,{excluded:true}),tx('closed','2026-10-16T12:00:00','支出',500,{status:'交易关闭'}),
+    tx('neutral','2026-10-16T13:00:00','中性',500),tx('dup','2026-10-16T14:00:00','支出',200,{source:'手动',manual:true,reconciledDuplicateOf:'imported'}),
+    tx('imported','2026-10-16T14:05:00','支出',200),tx('income','2026-10-16T15:00:00','收入',80)];
+  const {el}=await fixture({transactions});assert.equal(el('sumExpense').textContent,'¥230.00');assert.equal(el('sumIncome').textContent,'¥80.00');
+  assert.equal(el('sumNet').textContent,'¥-150.00');assert.equal(el('assetNet').textContent,'¥900.00');
+});
+test('新增修改删除区间流水会更新收支差额，但不会自动改变当前资产',async()=>{
+  const f=await fixture({transactions:[]});
+  for(const [transactions,net] of [[[tx('a','2026-10-16','支出',20)],-20],[[tx('a','2026-10-16','支出',50),tx('b','2026-10-16','收入',100)],50],[[],0]]){
+    f.context.transactions=transactions;f.context.refreshAll();assert.equal(f.el('sumNet').textContent,money(net));assert.equal(f.el('assetNet').textContent,'¥900.00');
+  }
+  assert.deepEqual(await loadAssetLedger(),f.assetUI.getLedger());
+});
+test('管理资产仍打开既有总账弹窗',async()=>{
+  const {el}=await fixture();el('assetLedgerOpen').handlers.click();assert.equal(el('assetLedgerDialog').open,true);assert.equal(el('ledgerNet').textContent,'¥900.00');
+});
+test('无账户时建立总账入口仍可用',async()=>{
+  const {el}=await fixture({ledger:emptyLedger()});el('assetLedgerOpenEmpty').handlers.click();assert.equal(el('assetLedgerDialog').open,true);
+});
+test('资产快照入口仍打开现有快照功能，已有快照保持可读',async()=>{
+  const {el}=await fixture();await el('snapshotsOpen').handlers.click();assert.equal(el('snapshotsDialog').open,true);
+  assert.match(el('snapshotList').innerHTML,/5,481\.85/);assert.equal((await loadSnapshots()).length,1);
+});
+test('账期核对入口仍打开现有核对面板',async()=>{
+  const {el}=await fixture({range:currentBillingPeriod(new Date(2026,9,16))});await el('balanceOpen').handlers.click();
+  assert.equal(el('balanceDialog').open,true);assert.match(el('balanceOpening').innerHTML,/2026-10-15/);
+  assert.equal(el('balanceRange').textContent,'2026.10.15 — 2026.11.14');
+});
+test('更改总账后资产卡片更新，仍不改区间收支',async()=>{
+  const f=await fixture();const before=f.el('sumNet').textContent;
+  const ledger=addAccount(currentLedger(),{name:'新增模拟资产',type:'asset',balance:50});await saveAssetLedger(ledger);await f.assetUI.load();
+  assert.equal(f.el('assetNet').textContent,'¥950.00');assert.equal(f.el('sumNet').textContent,before);
+});
+test('旧交易保留，使用以来排除起点之前的流水，自定义仍能查看',async()=>{
+  const f=await fixture();assert.equal(f.el('sumExpense').textContent,'¥120.00');
+  f.setRange(customDateRange('2026-09-01','2026-09-30'));assert.equal(f.el('sumExpense').textContent,'¥9.00');assert.equal(f.el('assetNet').textContent,'¥900.00');
+  assert.equal((await loadAllTransactions()).length,rows.length);
 });
 
-test('「设置起始资产快照」复用现有资产快照功能，日期预填且不覆盖已有当日快照', async () => {
+test('现有资产快照功能仍支持预填日期且不覆盖已有当日快照', async () => {
   globalThis.indexedDB = new IDBFactory();
   const { setupLedgerTools } = await import('../js/ledger-tools.js');
   const { loadSnapshots } = await import('../js/storage.js');
@@ -202,202 +183,4 @@ test('「设置起始资产快照」复用现有资产快照功能，日期预�
   assert.equal(elements.get('snapshotDate').value, USAGE_START_DATE);
   assert.equal((await loadSnapshots()).length, 1);
   delete globalThis.document;
-});
-
-test('使用以来模式下按钮状态与月份控件正确：只有本账期显示月份选择', () => {
-  const start = app.indexOf('function refreshAll()');
-  const end = app.indexOf('// ===== 备份 / 清空 =====');
-  assert.ok(start > 0 && end > start, '应能定位到 refreshAll');
-  const slice = app.slice(start, end);
-
-  for (const [range, expected] of [
-    [usageTimeRange(), 'usage'],
-    [currentBillingPeriod(new Date(2026, 9, 20)), 'billing'],
-    [customDateRange('2026-10-01', '2026-10-31'), 'custom']
-  ]) {
-    const elements = new Map();
-    const create = id => ({ id, hidden:false, value:'', textContent:'', innerHTML:'', pressed:null,
-      setAttribute(name, value){ this.pressed = value; } });
-    const context = {
-      range,
-      document: { getElementById: id => { if (!elements.has(id)) elements.set(id, create(id)); return elements.get(id); } },
-      refreshReviewNotice(){}, ledgerTools:{ refresh(){} }, populateCategoryFilter(){},
-      renderDetail(){}, refreshDashboard(){}
-    };
-    vm.createContext(context);
-    vm.runInContext(slice + '\nrefreshAll();', context);
-
-    assert.equal(elements.get('allRange').pressed, String(expected === 'usage'), '使用以来按钮高亮状态');
-    assert.equal(elements.get('billingRange').pressed, String(expected === 'billing'));
-    assert.equal(elements.get('customRangeOpen').pressed, String(expected === 'custom'));
-    assert.equal(elements.get('billingMonthWrap').hidden, expected !== 'billing');
-    // 只有本账期才写入并显示月份控件；使用以来不显示月份选择。
-    assert.equal(elements.get('monthPick').value, expected === 'billing' ? range.label : '');
-  }
-});
-
-test('新增、修改、删除交易后预计当前净资产生效于主KPI并同步变化', () => {
-  const snapshots = [startingSnapshot(5000)];
-  const ledger = addAccount(emptyLedger(), { name:'现金', type:'asset', balance:100 });
-  const base = [tx('e1','2026-10-16T10:00:00','支出',20)];
-
-  let el = runDashboard({ transactions:base, snapshots, ledger, range:usageTimeRange() });
-  assert.equal(el('sumNetLabel').textContent, '预计当前净资产');
-  assert.equal(el('sumNet').textContent, '¥4,980.00');
-
-  el = runDashboard({ transactions:[...base, tx('i1','2026-10-17T10:00:00','收入',100)], snapshots, ledger, range:usageTimeRange() });
-  assert.equal(el('sumNet').textContent, '¥5,080.00');
-  assert.equal(el('usageFlowNet').textContent, '¥80.00');
-  assert.equal(el('usageDiff').textContent, '−¥4,980.00');
-
-  el = runDashboard({ transactions:[tx('e1','2026-10-16T10:00:00','支出',50)], snapshots, ledger, range:usageTimeRange() });
-  assert.equal(el('sumNet').textContent, '¥4,950.00');
-
-  el = runDashboard({ transactions:[], snapshots, ledger, range:usageTimeRange() });
-  assert.equal(el('sumNet').textContent, '¥5,000.00');
-  assert.equal(el('usageDiff').textContent, '−¥4,900.00');
-});
-
-test('预计净资产复用现有统计口径：退款计入金额、排除项、关闭、中性、已核对重复', () => {
-  const ledger = addAccount(emptyLedger(), { name:'现金', type:'asset', balance:1000 });
-  const transactions = [
-    tx('refund','2026-10-16T10:00:00','支出',100,{ status:'部分退款', countedAmount:30 }), // 只计 30
-    tx('excluded','2026-10-16T11:00:00','支出',500,{ excluded:true }),                      // 不计
-    tx('closed','2026-10-16T12:00:00','支出',500,{ status:'交易关闭' }),                    // 不计
-    tx('neutral','2026-10-16T13:00:00','中性',500),                                        // 不计
-    // 已核对重复：手动记录不再计入统计，导入记录照常计入。
-    tx('manual-dup','2026-10-16T14:00:00','支出',200,{ source:'手动', manual:true, reconciledDuplicateOf:'imported-dup' }),
-    tx('imported-dup','2026-10-16T14:05:00','支出',200,{ source:'微信' }),
-    tx('income','2026-10-16T15:00:00','收入',80)
-  ];
-  const el = runDashboard({ transactions, snapshots:[startingSnapshot(1000)], ledger, range:usageTimeRange() });
-  // 预计 = 1000 + 80 - (30 + 200) = 850，直接体现在主 KPI 上。
-  assert.equal(el('sumNetLabel').textContent, '预计当前净资产');
-  assert.equal(el('sumNet').textContent, '¥850.00');
-  assert.equal(el('netStartExpense').textContent, '¥230.00');
-  assert.equal(el('netStartIncome').textContent, '¥80.00');
-  assert.equal(el('usageFlowNet').textContent, '¥-150.00');
-  // 同一笔交易在"本账期"和"使用以来"用同一口径。
-  const billing = currentBillingPeriod(new Date(2026, 10, 1));
-  const billingSummary = summarize(transactions, billing);
-  const usageSummary = summarize(transactions, usageTimeRange());
-  assert.equal(billingSummary.totalExpense, usageSummary.totalExpense);
-  assert.equal(billingSummary.totalIncome, usageSummary.totalIncome);
-  assert.equal(usageSummary.totalExpense, 230);
-});
-
-test('没有 2026-10-15 快照时不把 0 当起点，显示设置提示与入口', () => {
-  const ledger = addAccount(emptyLedger(), { name:'现金', type:'asset', balance:12 });
-  const el = runDashboard({
-    snapshots:[{ id:'snapshot:other', date:'2026-10-14', totalAssets:9000, totalLiabilities:0,
-      netAssets:9000, createdAt:'2026-10-14T00:00:00.000Z' }],
-    ledger, range: usageTimeRange(), transactions:[tx('e1','2026-10-16T10:00:00','支出',20)]
-  });
-
-  assert.equal(el('netStartList').hidden, true);
-  assert.equal(el('netStartHint').hidden, false);
-  assert.match(el('netStartHint').textContent, /尚未设置起始净资产/);
-  assert.match(el('netStartHint').textContent, new RegExp(USAGE_START_DATE));
-  assert.match(el('netStartHint').textContent, /请记录 2026-10-15 的资产快照/);
-  assert.equal(el('usageSnapshotSetup').hidden, false);
-  // 主区域不出现任何数字：既不显示 0，也不显示用 9000 或收支差额推出来的净资产。
-  assert.equal(el('sumNetLabel').textContent, '尚未设置起始净资产');
-  assert.equal(el('sumNet').textContent, '');
-  assert.notEqual(el('sumNetLabel').textContent, '预计当前净资产');
-  assert.notEqual(el('sumNet').textContent, '¥-20.00');
-  assert.match(el('netSub').textContent, /不等于当前资产/);
-  assert.equal(el('netUsage').hidden, false);
-  assert.equal(el('usageFlowNet').textContent, '¥-20.00');
-  // 没有起始快照就不显示差额。
-  assert.equal(el('usageDiffRow').hidden, true);
-  // 入口本质是创建/编辑 2026-10-15 的资产快照，复用现有功能。
-  assert.match(html, /id="usageSnapshotSetup"/);
-  assert.match(app, /ledgerTools\.newSnapshot\(USAGE_START_DATE\)/);
-  assert.match(readFileSync(new URL('js/ledger-tools.js', root), 'utf8'), /newSnapshot/);
-});
-
-test('没有资产总账时实际净资产显示为 — 且不显示差额', () => {
-  const el = runDashboard({ snapshots:[startingSnapshot(5000)], ledger: emptyLedger(), range: usageTimeRange() });
-  assert.equal(el('usageActualNet').textContent, '—');
-  assert.equal(el('usageActualMeta').textContent, '还没有建立资产总账');
-  assert.equal(el('usageDiffRow').hidden, true);
-  assert.equal(el('usageDiffNote').hidden, true);
-});
-
-test('预计与实际一致时显示账目与资产一致，不用警告文案', () => {
-  const ledger = addAccount(emptyLedger(), { name:'现金', type:'asset', balance:4980 });
-  const el = runDashboard({
-    transactions:[tx('e1','2026-10-16T10:00:00','支出',20)],
-    snapshots:[startingSnapshot(5000)], ledger, range: usageTimeRange()
-  });
-  assert.equal(el('sumNetLabel').textContent, '预计当前净资产');
-  assert.equal(el('sumNet').textContent, '¥4,980.00');
-  assert.equal(el('usageActualNet').textContent, '¥4,980.00');
-  assert.equal(el('usageDiff').textContent, '账目与资产一致');
-  assert.equal(el('usageDiffRow').hidden, false);
-  const text = ['usageDiff','usageDiffNote','netSub','usageFlowNet'].map(id => el(id).textContent).join(' ');
-  for (const word of ['错误','异常','警告','不平']) assert.ok(!text.includes(word), `不应出现 ${word}`);
-});
-
-test('本账期与自定义范围仍只显示收支结余，不出现预计净资产', () => {
-  const ledger = addAccount(emptyLedger(), { name:'现金', type:'asset', balance:4980 });
-  const snapshots = [startingSnapshot(5000)];
-  const transactions = [tx('e1','2026-10-16T10:00:00','支出',20), tx('i1','2026-10-16T11:00:00','收入',100)];
-
-  for (const range of [currentBillingPeriod(new Date(2026,9,20)), customDateRange('2026-10-01','2026-10-31')]) {
-    const el = runDashboard({ transactions, snapshots, ledger, range });
-    assert.equal(el('sumNetLabel').textContent, '收支结余');
-    assert.equal(el('netUsage').hidden, true);
-    assert.equal(el('usageNetCard').hidden, true);
-    assert.equal(el('sumNet').textContent, '¥80.00');
-    assert.equal(el('netSub').textContent, '收入减支出');
-  }
-});
-
-test('使用以来不修改任何资产账户余额，实际净资产只在总账变化时改变', async () => {
-  globalThis.indexedDB = new IDBFactory();
-  const ledger = addAccount(emptyLedger(), { name:'微信', type:'asset', balance:300 });
-  await saveAssetLedger(ledger);
-  await saveSnapshot({ date:USAGE_START_DATE, totalAssets:300, totalLiabilities:0 });
-
-  const el = runDashboard({
-    transactions:[tx('e1','2026-10-16T10:00:00','支出',20)],
-    snapshots:[startingSnapshot(300)], ledger, range: usageTimeRange()
-  });
-  assert.equal(el('sumNet').textContent, '¥280.00');
-  assert.equal(el('usageActualNet').textContent, '¥300.00');
-  // 记一笔支出后，资产总账与账户余额原样不动。
-  const reloaded = await loadAssetLedger();
-  assert.deepEqual(reloaded, ledger);
-  assert.deepEqual(reloaded.accounts.map(a => a.balance), [300]);
-  assert.deepEqual(calculateLedgerTotals(reloaded.accounts), { totalAssets:300, totalLiabilities:0, netAssets:300 });
-  delete globalThis.document;
-});
-
-test('2026-10-15 前旧交易完全保留，仍可被自定义时间查看', () => {
-  const old = tx('old','2026-09-01T10:00:00','支出',123);
-  const transactions = [old, tx('new','2026-10-20T10:00:00','支出',10)];
-  assert.deepEqual(filterTransactionsByRange(transactions, usageTimeRange()).map(t => t.id), ['new']);
-  assert.equal(summarize(transactions, usageTimeRange()).totalExpense, 10);
-  const custom = customDateRange('2026-09-01','2026-09-30');
-  assert.deepEqual(filterTransactionsByRange(transactions, custom).map(t => t.id), ['old']);
-  assert.equal(summarize(transactions, custom).totalExpense, 123);
-  // 记录本身没有被修改。
-  assert.equal(old.amount, 123);
-  assert.equal(old.datetime, '2026-09-01T10:00:00');
-});
-
-test('使用以来是"开始日期不同、口径相同"：只差 2026-10-15 之前的部分', () => {
-  const transactions = [
-    tx('old','2026-10-01T10:00:00','支出',777),
-    tx('e1','2026-10-16T10:00:00','支出',20),
-    tx('i1','2026-10-17T10:00:00','收入',100)
-  ];
-  const usage = summarize(transactions, usageTimeRange());
-  const everything = summarize(transactions, { start:null, end:null });
-  assert.equal(usage.totalExpense, 20);
-  assert.equal(usage.totalIncome, 100);
-  assert.equal(everything.totalExpense, 797);
-  assert.equal(everything.totalIncome, 100);
-  assert.equal(everything.totalExpense - usage.totalExpense, 777);
 });

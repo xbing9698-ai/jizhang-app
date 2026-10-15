@@ -42,25 +42,13 @@
 
 
 
-      <div class="kpi-row" aria-label="收支总览">
+      <div class="kpi-row" aria-label="收支概览">
+        <h2 class="card-title overview-heading">收支概览</h2>
         <div class="kpi-card kpi-net">
           <svg class="balance-landscape" viewBox="0 0 400 160" preserveAspectRatio="none" aria-hidden="true"><path d="M0 88C80 45 125 158 210 95S320 12 400 66V160H0Z" fill="#f3dfc8"/><path d="M0 140C85 106 180 156 260 112S350 74 400 50V160H0Z" fill="#e9dfc6"/></svg>
-          <span class="kpi-label" id="sumNetLabel">收支结余</span>
+          <span class="kpi-label" id="sumNetLabel">收支差额</span>
           <span class="kpi-value" id="sumNet">¥0.00</span>
           <span class="kpi-sub" id="netSub"></span>
-          <p class="net-usage-hint" id="netStartHint" hidden></p>
-          <button type="button" class="text-button net-usage-setup" id="usageSnapshotSetup" hidden>设置起始资产快照</button>
-          <div class="net-usage" id="netUsage" hidden>
-            <ol class="net-usage-values" id="netStartList" hidden>
-              <li><span>起始净资产</span><b id="netStartValue">¥0.00</b></li>
-              <li><span>快照后收入</span><b id="netStartIncome">¥0.00</b></li>
-              <li><span>快照后支出</span><b id="netStartExpense">¥0.00</b></li>
-              <li><span>快照后收支差额</span><b id="netAfterFlowNet">¥0.00</b></li>
-            </ol>
-            <ol class="net-usage-values" aria-label="使用以来收支">
-              <li><span>使用以来收支差额</span><b id="usageFlowNet">¥0.00</b></li>
-            </ol>
-          </div>
         </div>
         <div class="kpi-card kpi-expense">
           <span class="kpi-label">支出</span>
@@ -74,17 +62,22 @@
         </div>
       </div>
 
-      <div class="card usage-net-card" id="usageNetCard" hidden aria-label="使用以来净资产核对">
-        <div class="usage-net-row">
-          <span class="usage-net-label">实际当前净资产</span>
-          <span class="usage-net-value" id="usageActualNet">—</span>
+      <div class="card asset-current" id="assetCurrent">
+        <div class="card-head"><h2 class="card-title">当前资产</h2><span class="card-meta" id="assetUpdated"></span></div>
+        <div id="assetCurrentEmpty" class="asset-empty">
+          <p class="empty-hint">还没有记录当前资产</p>
+          <button type="button" class="btn btn-secondary" id="assetLedgerOpenEmpty">建立总账 ›</button>
         </div>
-        <p class="usage-net-meta" id="usageActualMeta"></p>
-        <p class="usage-net-row usage-net-diff" id="usageDiffRow" hidden>
-          <span class="usage-net-label">待核对差额</span>
-          <span class="usage-net-value" id="usageDiff">—</span>
-        </p>
-        <p class="usage-net-note" id="usageDiffNote" hidden>实际 − 预计</p>
+        <div id="assetCurrentBody" hidden>
+          <p class="asset-net-label">当前净资产</p>
+          <p class="asset-net-value" id="assetNet">¥0.00</p>
+          <p class="asset-split"><span>总资产 <b id="assetTotal">¥0.00</b></span><span>总负债 <b id="assetLiability">¥0.00</b></span></p>
+        </div>
+        <div class="asset-actions">
+          <button type="button" class="text-button" id="assetLedgerOpen">管理资产</button>
+          <button type="button" class="text-button" id="snapshotsOpen">资产快照</button>
+          <button type="button" class="text-button" id="balanceOpen">账期核对</button>
+        </div>
       </div>
 
       <div class="card category-surface">
@@ -103,25 +96,6 @@
         <p class="empty-hint" id="pieEmpty" hidden>还没有记录，记一笔或导入账单就能看到花销。</p>
         <ul class="cat-list" id="catList"></ul>
         </div>
-      </div>
-
-      <div class="card asset-current" id="assetCurrent">
-        <div class="card-head"><h2 class="card-title">当前资产</h2><span class="card-meta" id="assetUpdated"></span></div>
-        <div id="assetCurrentEmpty" class="asset-empty">
-          <p class="empty-hint">还没有记录当前资产</p>
-          <button type="button" class="btn btn-secondary" id="assetLedgerOpenEmpty">建立总账 ›</button>
-        </div>
-        <div id="assetCurrentBody" hidden>
-          <p class="asset-net-label">当前净资产</p>
-          <p class="asset-net-value" id="assetNet">¥0.00</p>
-          <p class="asset-split"><span>总资产 <b id="assetTotal">¥0.00</b></span><span>总负债 <b id="assetLiability">¥0.00</b></span></p>
-          <button type="button" class="text-button" id="assetLedgerOpen">查看资产总账 ›</button>
-        </div>
-      </div>
-
-      <div class="ledger-tools">
-        <button type="button" class="text-button tool-row" id="snapshotsOpen"><span class="tool-icon tone-clay"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 9h16M15 12h5v5h-5Z"/></svg></span><span class="tool-copy"><span>资产快照</span><small>记录总资产与总负债</small></span><span class="tool-chevron" aria-hidden="true">›</span></button>
-        <button type="button" class="text-button tool-row" id="balanceOpen"><span class="tool-icon tone-amber"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8M8 12h6m-4 4 2 2 4-4"/></svg></span><span class="tool-copy"><span>账期核对</span><small>查看账单与资产变化</small></span><span class="tool-chevron" aria-hidden="true">›</span></button>
       </div>
 
       <div class="card" id="topCard" hidden>

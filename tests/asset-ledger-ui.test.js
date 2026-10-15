@@ -175,13 +175,10 @@ test('没有账户时拒绝从空总账生成快照', async () => {
   assert.deepEqual(await loadSnapshots(), []);
 });
 
-test('首页KPI文案按范围区分：本账期/自定义为收支结余，使用以来主数字为预计当前净资产', () => {
+test('首页KPI在所有范围统一为收支差额，与当前资产独立', () => {
   assert.ok(html.includes('id="sumNetLabel"'));
-  assert.match(app, /document\.getElementById\('sumNetLabel'\)\.textContent = '收支结余'/);
-  // 使用以来：有起始快照时主数字是预计当前净资产，没有时明确提示尚未设置。
-  assert.match(app, /document\.getElementById\('sumNetLabel'\)\.textContent = estimate \? '预计当前净资产' : '尚未设置起始净资产'/);
-  // 收支差额只作次级信息，不得再作为主 KPI 文案。
-  assert.ok(!/sumNetLabel'\)\.textContent = '使用以来收支差额'/.test(app));
+  assert.match(app, /document\.getElementById\('sumNetLabel'\)\.textContent = '收支差额'/);
+  assert.ok(!app.includes('renderUsageNet'));
   // 收支差额不得写成当前资产、账户余额或净资产。
   assert.ok(!/sumNetLabel'\)\.textContent = '(当前资产|账户余额|净资产)'/.test(app));
   assert.ok(html.includes('id="assetNet"'));
