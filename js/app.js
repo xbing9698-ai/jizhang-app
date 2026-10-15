@@ -14,6 +14,7 @@ import { isReconciledDuplicate, reconciliationCandidates } from './reconciliatio
 import { setupLedgerTools } from './ledger-tools.js';
 import { setupAssetLedgerUI } from './asset-ledger-ui.js';
 import { USAGE_START_DATE, findStartingSnapshot, estimateCurrentNet, checkDifference } from './estimated-assets.js';
+import { summarizeSnapshotChanges } from './snapshots.js';
 import { hasLedgerAccounts, calculateLedgerTotals } from './asset-ledger.js';
 import { filterDetails, sortTransactions } from './detail.js';
 import { newQuickEntry, keypadAmount, createQuickTransaction, setQuickDirection } from './quick-entry.js';
@@ -591,7 +592,8 @@ function renderUsageNet(s) {
   card.hidden = false;
 
   const starting = findStartingSnapshot(snapshots);
-  const estimate = starting ? estimateCurrentNet(starting, s) : null;
+  const changes = starting ? summarizeSnapshotChanges(starting, transactions, range) : null;
+  const estimate = starting ? estimateCurrentNet(starting, changes) : null;
 
   document.getElementById('sumNetLabel').textContent = estimate ? '预计当前净资产' : '尚未设置起始净资产';
   document.getElementById('netUsage').hidden = false;
@@ -610,13 +612,14 @@ function renderUsageNet(s) {
     setup.hidden = false;
   } else {
     document.getElementById('sumNet').textContent = fmtMoney(estimate.estimatedNetAssets);
-    document.getElementById('netSub').textContent = '使用以来收入减支出，仅表示区间收支差额，不等于当前资产';
+    document.getElementById('netSub').textContent = `以 ${starting.date} 起始资产快照为基准，仅计算快照日期之后的收支。`;
     hint.hidden = true;
     list.hidden = false;
     setup.hidden = true;
     document.getElementById('netStartValue').textContent = fmtMoney(estimate.startNetAssets);
     document.getElementById('netStartIncome').textContent = fmtMoney(estimate.income);
     document.getElementById('netStartExpense').textContent = fmtMoney(estimate.expense);
+    document.getElementById('netAfterFlowNet').textContent = fmtMoney(changes.net);
   }
 
   // 实际当前净资产来自资产总账，只在用户维护总账时改变；不自动跟随流水。

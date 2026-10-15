@@ -5,12 +5,13 @@ import vm from 'node:vm';
 import { IDBFactory } from 'fake-indexeddb';
 import {
   usageTimeRange, currentBillingPeriod, customDateRange, rangeText,
-  filterTransactionsByRange, prevPeriodRange, USAGE_START_DATE
+  filterTransactionsByRange, prevPeriodRange, USAGE_START_DATE, allTimeRange
 } from '../js/period.js';
 import { summarize, buildPeriodTable } from '../js/aggregate.js';
 import { findStartingSnapshot, estimateCurrentNet, checkDifference } from '../js/estimated-assets.js';
 import { hasLedgerAccounts, calculateLedgerTotals, emptyLedger, addAccount } from '../js/asset-ledger.js';
 import { saveSnapshot, saveAssetLedger, loadAssetLedger } from '../js/storage.js';
+import { summarizeSnapshotChanges } from '../js/snapshots.js';
 
 const root = new URL('../', import.meta.url);
 const html = readFileSync(new URL('index.html', root), 'utf8');
@@ -54,7 +55,7 @@ function runDashboard({ transactions = [], snapshots = [], ledger = emptyLedger(
     esc,
     transactions, snapshots, range, memory: {}, lastImport: null,
     summarize, prevPeriodRange, rangeText, filterTransactionsByRange, buildPeriodTable,
-    findStartingSnapshot, estimateCurrentNet, checkDifference, USAGE_START_DATE,
+    findStartingSnapshot, estimateCurrentNet, checkDifference, USAGE_START_DATE, summarizeSnapshotChanges,
     hasLedgerAccounts, calculateLedgerTotals,
     assetLedgerUI: { getLedger: () => ledger },
     noopPie(){}, noopTrend(){}
@@ -98,8 +99,8 @@ test('使用以来模式下主KPI是预计当前净资产，收支差额为次�
   // 收支差额不再是主数字，只在次级列表里出现。
   assert.notEqual(el('sumNetLabel').textContent, '使用以来收支差额');
   assert.notEqual(el('sumNet').textContent, '¥-20.00');
-  assert.match(el('netSub').textContent, /仅表示区间收支差额，不等于当前资产/);
-  // 次级信息保留起始净资产、使用以来收入、支出与收支差额。
+  assert.match(el('netSub').textContent, /以 2026-10-15 起始资产快照为基准，仅计算快照日期之后的收支/);
+  // 公式明细使用快照后增量；普通使用以来收支差额独立保留。
   assert.equal(el('netStartValue').textContent, '¥5,000.00');
   assert.equal(el('netStartIncome').textContent, '¥0.00');
   assert.equal(el('netStartExpense').textContent, '¥20.00');
@@ -118,6 +119,55 @@ test('使用以来模式下主KPI是预计当前净资产，收支差额为次�
   assert.ok(card.indexOf('id="usageFlowNet"') > card.indexOf('id="netUsage"'));
   assert.match(css, /\.kpi-net \.kpi-value\{font-size:39px/);
   assert.ok(!/\.net-usage-values li:first-child b\{font-size:17px\}/.test(css), '列表首行不应放大成主数字');
+});
+
+for (const [name, after, expected] of [
+  ['起始日工资不重复计算', [], '¥5,481.85'],
+  ['次日支出100', [tx('expense','2026-10-16T00:00:00','支出',100)], '¥5,381.85'],
+  ['次日支出100并收入200', [tx('expense','2026-10-16T00:00:00','支出',100),tx('income','2026-10-16T12:00:00','收入',200)], '¥5,581.85']
+]) test(`真实仪表盘口径：${name}`, () => {
+  const snapshot = Object.freeze(startingSnapshot(5481.85, {createdAt:'2030-01-01T00:00:00Z'}));
+  const rows = [Object.freeze(tx('salary','2026-10-15T10:00:00','收入',5651.72)), ...after];
+  const el = runDashboard({snapshots:[snapshot],transactions:rows});
+  const ordinary = summarize(rows,usageTimeRange());
+  const changes = summarizeSnapshotChanges(snapshot,rows,usageTimeRange());
+  assert.equal(el('sumNet').textContent,expected);
+  assert.equal(el('netStartValue').textContent,'¥5,481.85');
+  assert.equal(el('netStartIncome').textContent,`¥${changes.totalIncome.toFixed(2)}`);
+  assert.equal(el('netStartExpense').textContent,`¥${changes.totalExpense.toFixed(2)}`);
+  assert.equal(el('netAfterFlowNet').textContent,`¥${changes.net.toFixed(2)}`);
+  assert.equal(el('sumIncome').textContent,`¥${ordinary.totalIncome.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})}`);
+  assert.equal(el('usageFlowNet').textContent,`¥${ordinary.net.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})}`);
+  assert.match(el('netSub').textContent,/仅计算快照日期之后的收支/);
+  assert.equal(rows[0].amount,5651.72);
+  assert.equal(snapshot.netAssets,5481.85);
+});
+
+test('公式标签明确为快照后，普通使用以来收支差额独立保留',()=>{
+  const formula=html.slice(html.indexOf('id="netStartList"'),html.indexOf('</ol>',html.indexOf('id="netStartList"')));
+  assert.ok(formula.includes('快照后收入'));
+  assert.ok(formula.includes('快照后支出'));
+  assert.ok(formula.includes('快照后收支差额'));
+  assert.ok(!formula.includes('使用以来'));
+  assert.match(html,/<span>使用以来收支差额<\/span><b id="usageFlowNet">/);
+});
+
+test('快照后筛选不改变本账期、自定义、全部时间及明细的普通范围',()=>{
+  const rows=[tx('old','2026-10-14T20:00:00','支出',9),tx('salary','2026-10-15T10:00:00','收入',5651.72),
+    tx('same-day','2026-10-15T23:59:59','支出',20),tx('after','2026-10-16T00:00:00','支出',100)];
+  for(const [range,expectedExpense,expectedIncome,count] of [
+    [usageTimeRange(),120,5651.72,3],
+    [currentBillingPeriod(new Date(2026,9,16)),120,5651.72,3],
+    [customDateRange('2026-10-15','2026-10-15'),20,5651.72,2],
+    [allTimeRange(),129,5651.72,4]
+  ]) {
+    const el=runDashboard({transactions:rows,snapshots:[startingSnapshot(5481.85)],range});
+    assert.equal(el('sumExpense').textContent,`¥${expectedExpense.toFixed(2)}`);
+    assert.equal(el('sumIncome').textContent,'¥5,651.72');
+    assert.equal(summarize(rows,range).totalIncome,expectedIncome);
+    assert.equal(filterTransactionsByRange(rows,range).length,count);
+    if(range.mode!=='usage')assert.equal(el('sumNet').textContent,`¥${(expectedIncome-expectedExpense).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})}`);
+  }
 });
 
 test('「设置起始资产快照」复用现有资产快照功能，日期预填且不覆盖已有当日快照', async () => {

@@ -53,8 +53,11 @@
           <div class="net-usage" id="netUsage" hidden>
             <ol class="net-usage-values" id="netStartList" hidden>
               <li><span>起始净资产</span><b id="netStartValue">¥0.00</b></li>
-              <li><span>使用以来收入</span><b id="netStartIncome">¥0.00</b></li>
-              <li><span>使用以来支出</span><b id="netStartExpense">¥0.00</b></li>
+              <li><span>快照后收入</span><b id="netStartIncome">¥0.00</b></li>
+              <li><span>快照后支出</span><b id="netStartExpense">¥0.00</b></li>
+              <li><span>快照后收支差额</span><b id="netAfterFlowNet">¥0.00</b></li>
+            </ol>
+            <ol class="net-usage-values" aria-label="使用以来收支">
               <li><span>使用以来收支差额</span><b id="usageFlowNet">¥0.00</b></li>
             </ol>
           </div>
@@ -368,7 +371,7 @@
       <p id="balanceMsg" class="form-error" role="alert"></p>
     </form>
     <div id="balanceResult" aria-live="polite"></div>
-    <p class="section-note">核对差额仅用于辅助检查。同日工资到账、退款、转账时点、现金变化等情况也可能产生差额。</p>
+    <p class="section-note">快照代表该日结束时的资产状态。核对仅计算期初快照日期之后、期末快照日期当天及之前的收支，并与所选范围取交集。差额仅用于辅助检查。</p>
   </dialog>
 
   <dialog id="duplicateDialog" class="sheet" aria-labelledby="duplicateTitle">

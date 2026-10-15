@@ -26,11 +26,21 @@ export function sortSnapshots(snapshots) {
   return snapshots.slice().sort((a,b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
 }
 
+// 快照表示该日结束时的状态；只按账单的实际日期部分取 (opening.date, closing.date]。
+// 仍与所选 range 取交集，再复用统一统计规则；createdAt 不代表余额时点。
+export function summarizeSnapshotChanges(opening, transactions, range, closing = null) {
+  const changes = transactions.filter(t => {
+    const date = String(t.datetime ?? '').slice(0, 10);
+    return billingPeriodLabel(date) && date > opening.date && (!closing || date <= closing.date);
+  });
+  return summarize(changes, range);
+}
+
 export function reconcileBalance(opening, closing, transactions, range) {
   if (!opening || !closing || opening.id === closing.id) throw new Error('请选择不同的期初和期末快照');
   if (opening.date > closing.date) throw new Error('期初快照日期不能晚于期末');
   customDateRange(range?.start, range?.end);
-  const { totalIncome:income, totalExpense:expense } = summarize(transactions, range);
+  const { totalIncome:income, totalExpense:expense } = summarizeSnapshotChanges(opening, transactions, range, closing);
   const theoretical = (Math.round(opening.netAssets * 100) + Math.round(income * 100) - Math.round(expense * 100)) / 100;
   return { opening:opening.netAssets, income, expense, theoretical, actual:closing.netAssets,
     difference:(Math.round(closing.netAssets * 100) - Math.round(theoretical * 100)) / 100 };

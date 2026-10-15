@@ -21,13 +21,13 @@ export function hasStartingSnapshot(snapshots) {
   return findStartingSnapshot(snapshots) !== null;
 }
 
-// 预计当前净资产 = 起始净资产 + 使用以来收入 - 使用以来支出。
-// 收入与支出由调用方用现有 summarize() 在同一范围内算出，口径与"本账期"完全一致。
-export function estimateCurrentNet(snapshot, usageSummary) {
+// 预计当前净资产 = 起始净资产 + 快照后收入 - 快照后支出。
+// 调用方通过 summarizeSnapshotChanges() 取快照日期之后的增量，普通使用以来范围保持不变。
+export function estimateCurrentNet(snapshot, afterSnapshotSummary) {
   if (!snapshot) return null;
   const start = validMoney(snapshot.netAssets, '起始净资产');
-  const income = validMoney(usageSummary?.totalIncome, '使用以来收入');
-  const expense = validMoney(usageSummary?.totalExpense, '使用以来支出');
+  const income = validMoney(afterSnapshotSummary?.totalIncome, '快照后收入');
+  const expense = validMoney(afterSnapshotSummary?.totalExpense, '快照后支出');
   return {
     startNetAssets: start,
     income,

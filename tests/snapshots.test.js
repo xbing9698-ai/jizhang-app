@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSnapshot, sortSnapshots, reconcileBalance } from '../js/snapshots.js';
+import { createSnapshot, sortSnapshots, reconcileBalance, summarizeSnapshotChanges } from '../js/snapshots.js';
 import { billingPeriodRange, customDateRange } from '../js/period.js';
 const make = (assets,liabilities = 0,date = '2026-09-15') => createSnapshot({date,totalAssets:assets,totalLiabilities:liabilities,note:' 测试 '});
 test('新快照生成唯一身份，净资产按分计算，可为负数',()=>{
@@ -37,4 +37,55 @@ test('账期核对拒绝缺快照、同快照、日期反向、全部时间或�
   assert.throws(()=>reconcileBalance(a,a,[],billingPeriodRange('2026-10')));
   assert.throws(()=>reconcileBalance(b,a,[],billingPeriodRange('2026-10')));
   assert.throws(()=>reconcileBalance(a,b,[],{start:null,end:null}));
+});
+
+test('快照后只按实际日期筛选，排除起始日全部时刻，不使用createdAt或UTC换算',()=>{
+  const opening=Object.freeze({...make(5481.85,0,'2026-10-15'),createdAt:'2030-01-01T00:00:00Z'});
+  const rows=[
+    {datetime:'2026-10-14T20:00:00',direction:'收入',amount:1},
+    {datetime:'2026-10-15T00:01:00+14:00',direction:'收入',amount:2},
+    {datetime:'2026-10-15T23:59:59-12:00',direction:'收入',amount:3},
+    {datetime:'2026-10-16T00:00:00+14:00',direction:'收入',amount:200},
+    {datetime:'2026-10-17T12:00:00',direction:'支出',amount:100}
+  ].map(Object.freeze);
+  const before=JSON.stringify(rows);
+  const result=summarizeSnapshotChanges(opening,rows,customDateRange('2026-10-14','2026-10-17'));
+  assert.equal(result.totalIncome,200);
+  assert.equal(result.totalExpense,100);
+  assert.equal(result.net,100);
+  assert.equal(JSON.stringify(rows),before);
+});
+
+test('快照后汇总继续复用退款实际金额、排除、交易关闭和已核对重复规则',()=>{
+  const rows=[
+    {datetime:'2026-10-16T10:00:00',direction:'支出',amount:100,countedAmount:30,status:'部分退款'},
+    {datetime:'2026-10-16T11:00:00',direction:'支出',amount:500,excluded:true},
+    {datetime:'2026-10-16T12:00:00',direction:'支出',amount:500,status:'交易关闭'},
+    {datetime:'2026-10-16T13:00:00',direction:'支出',amount:500,source:'手动',reconciledDuplicateOf:'imported'},
+    {datetime:'2026-10-16T14:00:00',direction:'收入',amount:200}
+  ];
+  const s=summarizeSnapshotChanges(make(5481.85,0,'2026-10-15'),rows);
+  assert.equal(s.totalExpense,30);assert.equal(s.count,1);assert.equal(s.totalIncome,200);
+});
+
+test('账期核对采用(opening.date, closing.date]，期初当天不重算、期末当天计入',()=>{
+  const opening=make(5481.85,0,'2026-10-15'),closing=make(5581.85,0,'2026-10-16');
+  const rows=[
+    {datetime:'2026-10-15T00:01:00',direction:'收入',amount:5651.72},
+    {datetime:'2026-10-15T23:59:59',direction:'支出',amount:900},
+    {datetime:'2026-10-16T00:00:00',direction:'收入',amount:200},
+    {datetime:'2026-10-16T23:59:59',direction:'支出',amount:100},
+    {datetime:'2026-10-17T00:00:00',direction:'收入',amount:999}
+  ];
+  const r=reconcileBalance(opening,closing,rows,customDateRange('2026-10-14','2026-10-17'));
+  assert.deepEqual(r,{opening:5481.85,income:200,expense:100,theoretical:5581.85,actual:5581.85,difference:0});
+});
+
+test('账期核对仍与所选自定义范围取交集，同日期的两张快照没有增量',()=>{
+  const opening=make(100,0,'2026-10-15'),closing=make(150,0,'2026-10-17');
+  const rows=[{datetime:'2026-10-16T12:00:00',direction:'收入',amount:30},{datetime:'2026-10-17T12:00:00',direction:'收入',amount:20}];
+  const r=reconcileBalance(opening,closing,rows,customDateRange('2026-10-17','2026-10-18'));
+  assert.equal(r.income,20);assert.equal(r.theoretical,120);assert.equal(r.difference,30);
+  const sameDay=reconcileBalance(opening,make(100,0,opening.date),rows,customDateRange('2026-10-15','2026-10-17'));
+  assert.equal(sameDay.income,0);assert.equal(sameDay.expense,0);assert.equal(sameDay.difference,0);
 });
