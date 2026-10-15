@@ -2,7 +2,7 @@ import {test,beforeEach,afterEach,mock} from 'node:test';
 import assert from 'node:assert/strict';
 import {IDBFactory} from 'fake-indexeddb';
 import {saveTransactions,loadAllTransactions,saveMemory,loadMemory,saveSnapshot,loadSnapshots,deleteSnapshot,
-  saveReconciliation,exportBackup,importBackup,clearAllData} from '../js/storage.js';
+  saveReconciliation,exportBackup,importBackup,clearAllData,loadAssetLedger} from '../js/storage.js';
 import {reconciliationCandidates} from '../js/reconciliation.js';
 import {summarize} from '../js/aggregate.js';
 beforeEach(()=>{globalThis.indexedDB=new IDBFactory();});
@@ -28,7 +28,7 @@ test('真实v1结构升级只新增快照表，旧记录所有字段、稳定ID�
   assert.deepEqual(await loadAllTransactions(),[imported]);assert.deepEqual(await loadMemory(),{'旧商户':'用户分类'});
   assert.deepEqual(await loadSnapshots(),[]);
   const db=await new Promise(resolve=>{const req=indexedDB.open('jizhang');req.onsuccess=()=>resolve(req.result);});
-  assert.equal(db.version,2);assert.deepEqual([...db.objectStoreNames],['merchantMemory','snapshots','transactions']);db.close();
+  assert.equal(db.version,3);assert.deepEqual([...db.objectStoreNames],['assetLedger','merchantMemory','snapshots','transactions']);db.close();
   await saveSnapshot({date:'2026-10-14',totalAssets:1000,totalLiabilities:100,note:'测试'});
   assert.deepEqual(await loadAllTransactions(),[imported]);
 });
@@ -40,9 +40,15 @@ test('升级被旧连接占用会明确报错，关闭旧连接后可继续，�
 test('升级事务失败回滚到v1，重试后旧数据仍在',async()=>{
   const old=await legacyDb();await seedV1(old);old.close();
   const original=indexedDB.open.bind(indexedDB);let abortOnce=true;
-  mock.method(indexedDB,'open',(...args)=>{const req=original(...args);if(args[1]===2&&abortOnce){abortOnce=false;req.addEventListener('upgradeneeded',()=>req.transaction.abort());}return req;});
+  // 当前版本为 v3；中断一次升级事务，验证回滚后重试仍能读到旧数据。
+  mock.method(indexedDB,'open',(...args)=>{const req=original(...args);if(args[1]===3&&abortOnce){abortOnce=false;req.addEventListener('upgradeneeded',()=>req.transaction.abort());}return req;});
   await assert.rejects(loadSnapshots());
   const check=await legacyDb();assert.equal(check.version,1);check.close();
+  assert.deepEqual(await loadAllTransactions(),[imported]);
+  // 重试这次升级必须成功，且旧记录仍在。
+  assert.deepEqual(await loadSnapshots(),[]);
+  const upgraded=await new Promise(resolve=>{const req=indexedDB.open('jizhang');req.onsuccess=()=>resolve(req.result);});
+  assert.equal(upgraded.version,3);upgraded.close();
   assert.deepEqual(await loadAllTransactions(),[imported]);
 });
 test('快照新建、编辑、历史、删除持久化，纠错不影响交易',async()=>{
@@ -65,9 +71,10 @@ test('新备份原交易、收入、快照、退款、确认和否定状态完�
   await saveTransactions([manual,imported,m2,i2]);await saveMemory('测试店','餐饮');
   await saveReconciliation(manual.id,imported.id,'confirm');await saveReconciliation(m2.id,i2.id,'dismiss');
   await saveSnapshot({date:'2026-10-14',totalAssets:5000,totalLiabilities:100});
-  const before={txns:await loadAllTransactions(),mem:await loadMemory(),snapshots:await loadSnapshots()},text=await backupText();
+  const before={txns:await loadAllTransactions(),mem:await loadMemory(),snapshots:await loadSnapshots(),assetLedger:await loadAssetLedger()},text=await backupText();
   assert.deepEqual(JSON.parse(text),before);await clearAllData();await importBackup({text:async()=>text});
   assert.deepEqual(await loadAllTransactions(),before.txns);assert.deepEqual(await loadSnapshots(),before.snapshots);assert.deepEqual(await loadMemory(),before.mem);
+  assert.deepEqual(await loadAssetLedger(),before.assetLedger);
   assert.equal(summarize(await loadAllTransactions()).totalExpense,20);assert.equal(reconciliationCandidates(await loadAllTransactions()).length,0);
   assert.ok(before.txns.every(t=>!Object.hasOwn(t,'range')&&!Object.hasOwn(t,'period')));
 });

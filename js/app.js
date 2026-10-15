@@ -12,6 +12,7 @@ import { iconSvg } from './icons.js';
 import { isManualTransaction } from './manual.js';
 import { isReconciledDuplicate, reconciliationCandidates } from './reconciliation.js';
 import { setupLedgerTools } from './ledger-tools.js';
+import { setupAssetLedgerUI } from './asset-ledger-ui.js';
 import { filterDetails, sortTransactions } from './detail.js';
 import { newQuickEntry, keypadAmount, createQuickTransaction, setQuickDirection } from './quick-entry.js';
 import { countedExpenseAmount, isValidCountedAmount, canAdjustTransaction, needsReview, filterNeedsReview } from './review.js';
@@ -588,6 +589,8 @@ function refreshDashboard() {
   document.getElementById('sumExpense').textContent = fmtMoney(s.totalExpense);
   document.getElementById('sumIncome').textContent = fmtMoney(s.totalIncome);
   document.getElementById('sumNet').textContent = fmtMoney(s.net);
+  // 收支差额不是净资产；只有资产总账才回答"现在有多少钱"。
+  document.getElementById('sumNetLabel').textContent = range.mode === 'all' ? '累计收支差额' : '收支结余';
   document.getElementById('rangeLabel').textContent = rangeText(range);
   document.getElementById('expenseCount').textContent = s.count ? `${s.count} 笔` : '';
 
@@ -672,6 +675,7 @@ document.getElementById('importBackup').addEventListener('change', async e => {
     transactions = await loadAllTransactions();
     classifyAll();
     await ledgerTools.load();
+    await assetLedgerUI.load();
     refreshAll();
     switchView('overview');
     msg.className = 'import-msg ok';
@@ -684,10 +688,11 @@ document.getElementById('importBackup').addEventListener('change', async e => {
 });
 
 document.getElementById('clearBtn').addEventListener('click', async () => {
-  if (!confirm('确定清空所有账单、商户记忆与资产快照？此操作不可撤销。')) return;
+  if (!confirm('确定清空所有账单、商户记忆、资产快照与资产总账？此操作不可撤销。')) return;
   await clearAllData();
   transactions = []; memory = {};
   await ledgerTools.load();
+  await assetLedgerUI.load();
   refreshAll();
 });
 
@@ -697,11 +702,16 @@ const ledgerTools = setupLedgerTools({
   updateTransaction:updated => { transactions = transactions.map(t => t.id === updated.id ? updated : t); },
   refreshApp:refreshAll
 });
+const assetLedgerUI = setupAssetLedgerUI({
+  refreshApp:refreshAll,
+  refreshSnapshots:() => ledgerTools.load()
+});
 (async () => {
   try {
     memory = await loadMemory();
     transactions = await loadAllTransactions();
     await ledgerTools.load();
+    await assetLedgerUI.load();
     classifyAll(); refreshAll();
   } catch (error) {
     document.getElementById('quickFeedback').textContent = '未能读取本地数据：' + error.message;

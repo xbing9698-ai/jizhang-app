@@ -32,7 +32,7 @@ test('快速记账在扩展JSON备份中导出清空恢复后字段完整', asyn
   globalThis.document = { createElement: () => ({ click() {} }) };
   await exportBackup();
   const json = await blob.text();
-  assert.deepEqual(Object.keys(JSON.parse(json)).sort(), ['mem','snapshots','txns']);
+  assert.deepEqual(Object.keys(JSON.parse(json)).sort(), ['assetLedger','mem','snapshots','txns']);
   await clearAllData();
   assert.deepEqual(await loadAllTransactions(), []);
   await importBackup({ text:async () => json });

@@ -22,7 +22,7 @@ test('清空后立即选择同一备份仍恢复完整记录，输入重置不�
   const row={id:'manual:old-test',source:'手动',direction:'收入',amount:100,datetime:'2026-10-01T00:00:00',myCategory:'工资',manual:true};
   const file=new File([JSON.stringify({txns:[row],mem:{}})],'backup.json'),control=input(file),msg={},feedback={};let handler;
   vm.runInNewContext(code,{document:{getElementById:id=>id==='importBackup'?{addEventListener:(_,fn)=>{handler=fn;}}:id==='quickFeedback'?feedback:msg},
-    importBackup,loadAllTransactions,loadMemory,saveTransactions,ledgerTools:{async load(){}},classifyAll(){},refreshAll(){},switchView(){},transactions:[],memory:{}});
+    importBackup,loadAllTransactions,loadMemory,saveTransactions,ledgerTools:{async load(){}},assetLedgerUI:{async load(){}},classifyAll(){},refreshAll(){},switchView(){},transactions:[],memory:{}});
   await handler({target:control});assert.equal(control.value,'');assert.deepEqual(await loadAllTransactions(),[row]);
   await clearAllData();control.select();await handler({target:control});
   assert.equal(control.value,'');assert.deepEqual(await loadAllTransactions(),[row]);assert.equal(msg.textContent,'备份已恢复。');

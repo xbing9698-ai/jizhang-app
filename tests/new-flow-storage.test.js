@@ -18,7 +18,7 @@ test('手动收入改分类后导出清空恢复完整，旧记录一同保留�
   await saveTransactions([income,legacy]);await saveTransactionCategory(income.id,'兼职 / 其他收入');
   let blob;mock.method(URL,'createObjectURL',value=>{blob=value;return 'blob:income-test';});mock.method(URL,'revokeObjectURL',()=>{});
   globalThis.document={createElement:()=>({click(){}})};await exportBackup();const json=await blob.text(),before=await loadAllTransactions();
-  assert.deepEqual(Object.keys(JSON.parse(json)).sort(),['mem','snapshots','txns']);await clearAllData();await importBackup({text:async()=>json});assert.deepEqual(await loadAllTransactions(),before);
+  assert.deepEqual(Object.keys(JSON.parse(json)).sort(),['assetLedger','mem','snapshots','txns']);await clearAllData();await importBackup({text:async()=>json});assert.deepEqual(await loadAllTransactions(),before);
   const restored=(await loadAllTransactions()).find(t=>t.id===income.id);assert.equal(restored.myCategory,'兼职 / 其他收入');assert.equal(restored.rawCategory,'工资');assert.equal(resolveCategory(restored),'兼职 / 其他收入');
   await deleteManualTransaction(income.id);assert.deepEqual(await loadAllTransactions(),[legacy]);
 });

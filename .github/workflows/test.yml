@@ -1,0 +1,19 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+      - name: 安装依赖
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: 运行完整测试
+        run: npm test

@@ -3,7 +3,8 @@ import { todayDate } from './manual.js';
 import { createSnapshot, reconcileBalance } from './snapshots.js';
 import { reconciliationCandidates } from './reconciliation.js';
 import { currentBillingPeriod, customDateRange, rangeText } from './period.js';
-import { loadSnapshots, saveSnapshot, deleteSnapshot, saveReconciliation } from './storage.js';
+import { loadSnapshots, saveSnapshot, deleteSnapshot, saveReconciliation, loadAssetLedger } from './storage.js';
+import { hasLedgerAccounts, calculateLedgerTotals } from './asset-ledger.js';
 
 export function setupLedgerTools({ getTransactions, getRange, updateTransaction, refreshApp }) {
   const el = id => document.getElementById(id);
@@ -14,7 +15,7 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
   const key = p => JSON.stringify([p.manual.id,p.imported.id]);
   const setBusy = value => {
     busy = value;
-    ['snapshotSave','snapshotEditClose','snapshotDeleteConfirm','snapshotDeleteCancel','duplicateConfirm','duplicateDismiss','duplicateLater','duplicateClose'].forEach(id => { el(id).disabled = value; });
+    ['snapshotSave','snapshotEditClose','snapshotDeleteConfirm','snapshotDeleteCancel','duplicateConfirm','duplicateDismiss','duplicateLater','duplicateClose','snapshotFromLedgerFill'].forEach(id => { el(id).disabled = value; });
   };
 
   function refresh() {
@@ -56,6 +57,19 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
     catch { el('snapshotNet').textContent = '—'; }
   }
   el('snapshotAdd').addEventListener('click',() => editSnapshot());
+  // 手工快照仍可独立填写；这里只是把资产总账的自动合计填进表单，保存仍需点击。
+  el('snapshotFromLedgerFill').addEventListener('click',async () => {
+    try {
+      const ledger = await loadAssetLedger();
+      if (!hasLedgerAccounts(ledger)) { el('snapshotListMsg').textContent = '还没有建立资产总账，请先在首页的「当前资产」建立总账。'; return; }
+      const totals = calculateLedgerTotals(ledger.accounts);
+      editSnapshot();
+      el('snapshotAssets').value = String(totals.totalAssets);
+      el('snapshotLiabilities').value = String(totals.totalLiabilities);
+      previewNet();
+      el('snapshotListMsg').textContent = '已按当前资产总账填入，可修改后保存。';
+    } catch (error) { el('snapshotListMsg').textContent = error.message; }
+  });
   el('snapshotList').addEventListener('click',e => {
     if (busy) return;
     const edit = e.target.closest('[data-edit]'), remove = e.target.closest('[data-delete]');

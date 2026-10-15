@@ -3,12 +3,16 @@ import { adjustTransaction } from './review.js';
 import { categoryUpdatePlan } from './transaction-edit.js';
 import { createSnapshot, sortSnapshots } from './snapshots.js';
 import { reconcileTransaction, isReconciledDuplicate } from './reconciliation.js';
+import { LEDGER_ID, normalizeLedger, emptyLedger } from './asset-ledger.js';
 
-const DB_NAME = 'jizhang', STORE_TXN = 'transactions', STORE_MEM = 'merchantMemory', STORE_SNAPSHOT = 'snapshots';
+const DB_NAME = 'jizhang', STORE_TXN = 'transactions', STORE_MEM = 'merchantMemory',
+  STORE_SNAPSHOT = 'snapshots', STORE_LEDGER = 'assetLedger';
+// v2 -> v3 只新增 assetLedger，既有 store 与全部记录原样保留。
+const DB_VERSION = 3;
 
 function openDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 2);
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
     let blocked = false;
     req.onblocked = () => {
       blocked = true;
@@ -22,6 +26,9 @@ function openDb() {
         db.createObjectStore(STORE_MEM, { keyPath: 'counterparty' });
       if (!db.objectStoreNames.contains(STORE_SNAPSHOT))
         db.createObjectStore(STORE_SNAPSHOT, { keyPath: 'id' });
+      // 只创建缺失的 store，绝不删除或重建已有 store。
+      if (!db.objectStoreNames.contains(STORE_LEDGER))
+        db.createObjectStore(STORE_LEDGER, { keyPath: 'id' });
     };
     req.onsuccess = () => {
       const db = req.result;
@@ -137,24 +144,47 @@ export async function loadMemory() {
 
 export async function clearAllData() {
   const db = await openDb();
-  const tx = db.transaction([STORE_TXN, STORE_MEM, STORE_SNAPSHOT], 'readwrite');
+  const tx = db.transaction([STORE_TXN, STORE_MEM, STORE_SNAPSHOT, STORE_LEDGER], 'readwrite');
   tx.objectStore(STORE_TXN).clear();
   tx.objectStore(STORE_MEM).clear();
   tx.objectStore(STORE_SNAPSHOT).clear();
+  tx.objectStore(STORE_LEDGER).clear();
+  return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); })
+    .finally(() => db.close());
+}
+
+// ===== 资产总账（当前状态；单一 singleton 记录） =====
+export async function loadAssetLedger() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(STORE_LEDGER).objectStore(STORE_LEDGER).get(LEDGER_ID);
+    req.onsuccess = () => resolve(req.result ? normalizeLedger(req.result) : emptyLedger());
+    req.onerror = () => reject(req.error);
+  }).finally(() => db.close());
+}
+
+// 写入前先在事务外校验；非法总账不会落库。
+export async function saveAssetLedger(ledger) {
+  const checked = normalizeLedger(ledger);
+  const db = await openDb();
+  const tx = db.transaction(STORE_LEDGER, 'readwrite');
+  tx.objectStore(STORE_LEDGER).put(checked);
   return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); })
     .finally(() => db.close());
 }
 
 export async function exportBackup() {
   const db = await openDb();
-  // 三类数据在同一只读事务中取一致的快照。
+  // 四类数据在同一只读事务中取一致的快照。
   const backup = await new Promise((resolve,reject) => {
-    const tx = db.transaction([STORE_TXN,STORE_MEM,STORE_SNAPSHOT]);
+    const tx = db.transaction([STORE_TXN,STORE_MEM,STORE_SNAPSHOT,STORE_LEDGER]);
     const txns = tx.objectStore(STORE_TXN).getAll();
     const memories = tx.objectStore(STORE_MEM).getAll();
     const snapshots = tx.objectStore(STORE_SNAPSHOT).getAll();
+    const ledger = tx.objectStore(STORE_LEDGER).get(LEDGER_ID);
     tx.oncomplete = () => resolve({txns:txns.result,
-      mem:Object.fromEntries(memories.result.map(m => [m.counterparty,m.category])), snapshots:sortSnapshots(snapshots.result)});
+      mem:Object.fromEntries(memories.result.map(m => [m.counterparty,m.category])), snapshots:sortSnapshots(snapshots.result),
+      assetLedger:ledger.result ? normalizeLedger(ledger.result) : emptyLedger()});
     tx.onerror = () => reject(tx.error);
   }).finally(() => db.close());
   const blob = new Blob([JSON.stringify(backup, null, 2)],
@@ -166,10 +196,18 @@ export async function exportBackup() {
 }
 
 export async function importBackup(file) {
-  const { txns = [], mem = {}, snapshots = [] } = JSON.parse(await file.text());
+  const parsed = JSON.parse(await file.text());
+  const { txns = [], mem = {}, snapshots = [] } = parsed;
   if (!Array.isArray(txns) || txns.some(t => !t || typeof t.id !== 'string' || !t.id) ||
       !mem || typeof mem !== 'object' || Array.isArray(mem) || !Array.isArray(snapshots))
     throw new Error('备份结构无效，现有数据未改动');
+  // 老备份没有 assetLedger：跳过该表，旧数据与现有总账都不改动。
+  const hasLedger = Object.hasOwn(parsed, 'assetLedger') && parsed.assetLedger != null;
+  let ledger = null;
+  if (hasLedger) {
+    try { ledger = normalizeLedger(parsed.assetLedger); }
+    catch (error) { throw new Error('资产总账备份无效：' + error.message); }
+  }
   const checked = snapshots.map(s => {
     if (!s || typeof s.id !== 'string' || !s.id || typeof s.createdAt !== 'string' || !s.createdAt)
       throw new Error('快照备份无效');
@@ -179,7 +217,7 @@ export async function importBackup(file) {
   });
   const db = await openDb();
   return new Promise((resolve,reject) => {
-    const tx = db.transaction([STORE_TXN, STORE_MEM, STORE_SNAPSHOT], 'readwrite');
+    const tx = db.transaction([STORE_TXN, STORE_MEM, STORE_SNAPSHOT, STORE_LEDGER], 'readwrite');
     let failure;
     const store = tx.objectStore(STORE_TXN), request = store.getAll();
     request.onsuccess = () => {
@@ -194,6 +232,7 @@ export async function importBackup(file) {
         for (const t of txns) store.put(t);
         for (const [cp,cat] of Object.entries(mem)) tx.objectStore(STORE_MEM).put({counterparty:cp,category:cat});
         for (const s of checked) tx.objectStore(STORE_SNAPSHOT).put(s);
+        if (ledger) tx.objectStore(STORE_LEDGER).put(ledger);
       } catch (error) { failure = error; tx.abort(); }
     };
     tx.oncomplete = resolve;

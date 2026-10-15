@@ -61,7 +61,7 @@ test('导出清空恢复完整保留三种处理结果及旧记录，扩展字�
   globalThis.document = { createElement: () => ({ click: () => {} }) };
   await exportBackup();
   const json = await blob.text();
-  assert.deepEqual(Object.keys(JSON.parse(json)).sort(), ['mem','snapshots','txns']);
+  assert.deepEqual(Object.keys(JSON.parse(json)).sort(), ['assetLedger','mem','snapshots','txns']);
   await clearAllData();
   assert.deepEqual(await loadAllTransactions(), []);
   await importBackup({ text:async () => json });

@@ -16,7 +16,7 @@ const create = () => createManualExpense({ date:'2026-09-15', amount:'28.50',
   category:'医疗健康', text:'测试美团订阅' });
 const range = billingPeriodRange('2026-10');
 
-test('手动记录在IndexedDB v2保存和重读，原有两表保留且仅新增快照表', async () => {
+test('手动记录在IndexedDB v3保存和重读，原有三表保留且仅新增资产总账表', async () => {
   const t = create();
   await saveTransactions([t]);
   assert.deepEqual(await loadAllTransactions(), [t]);
@@ -25,8 +25,8 @@ test('手动记录在IndexedDB v2保存和重读，原有两表保留且仅新�
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
-  assert.equal(db.version, 2);
-  assert.deepEqual(Array.from(db.objectStoreNames), ['merchantMemory','snapshots','transactions']);
+  assert.equal(db.version, 3);
+  assert.deepEqual(Array.from(db.objectStoreNames), ['assetLedger','merchantMemory','snapshots','transactions']);
   db.close();
 });
 
@@ -44,7 +44,7 @@ test('实际JSON导出、清空、导入往返完整恢复手动记录与商户�
   assert.equal(clicked, true);
   const json = await blob.text();
   const backup = JSON.parse(json);
-  assert.deepEqual(Object.keys(backup).sort(), ['mem','snapshots','txns']);
+  assert.deepEqual(Object.keys(backup).sort(), ['assetLedger','mem','snapshots','txns']);
   assert.deepEqual(backup.txns.find(row => row.id === t.id), t);
   await clearAllData();
   assert.deepEqual(await loadAllTransactions(), []);

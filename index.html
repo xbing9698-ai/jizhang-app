@@ -10,7 +10,6 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <script src="js/vendor/papaparse.min.js"></script>
-  <script src="js/vendor/xlsx.full.min.js"></script>
   <script src="js/vendor/chart.umd.min.js"></script>
 </head>
 <body>
@@ -46,7 +45,7 @@
       <div class="kpi-row" aria-label="收支总览">
         <div class="kpi-card kpi-net">
           <svg class="balance-landscape" viewBox="0 0 400 160" preserveAspectRatio="none" aria-hidden="true"><path d="M0 88C80 45 125 158 210 95S320 12 400 66V160H0Z" fill="#f3dfc8"/><path d="M0 140C85 106 180 156 260 112S350 74 400 50V160H0Z" fill="#e9dfc6"/></svg>
-          <span class="kpi-label">结余</span>
+          <span class="kpi-label" id="sumNetLabel">收支结余</span>
           <span class="kpi-value" id="sumNet">¥0.00</span>
           <span class="kpi-sub" id="netSub"></span>
         </div>
@@ -77,6 +76,20 @@
         </div>
         <p class="empty-hint" id="pieEmpty" hidden>还没有记录，记一笔或导入账单就能看到花销。</p>
         <ul class="cat-list" id="catList"></ul>
+        </div>
+      </div>
+
+      <div class="card asset-current" id="assetCurrent">
+        <div class="card-head"><h2 class="card-title">当前资产</h2><span class="card-meta" id="assetUpdated"></span></div>
+        <div id="assetCurrentEmpty" class="asset-empty">
+          <p class="empty-hint">还没有记录当前资产</p>
+          <button type="button" class="btn btn-secondary" id="assetLedgerOpenEmpty">建立总账 ›</button>
+        </div>
+        <div id="assetCurrentBody" hidden>
+          <p class="asset-net-label">当前净资产</p>
+          <p class="asset-net-value" id="assetNet">¥0.00</p>
+          <p class="asset-split"><span>总资产 <b id="assetTotal">¥0.00</b></span><span>总负债 <b id="assetLiability">¥0.00</b></span></p>
+          <button type="button" class="text-button" id="assetLedgerOpen">查看资产总账 ›</button>
         </div>
       </div>
 
@@ -248,8 +261,9 @@
 
   <dialog id="snapshotsDialog" class="sheet" aria-labelledby="snapshotsTitle">
     <div class="sheet-header"><h2 id="snapshotsTitle">资产快照</h2><button type="button" class="sheet-close" id="snapshotsClose" aria-label="关闭资产快照">×</button></div>
-    <p class="section-note">记录一个时间点的总资产与总负债，不管理账户。</p>
-    <div class="btn-row"><button type="button" class="btn btn-primary" id="snapshotAdd">新增快照</button><button type="button" class="btn btn-secondary" id="snapshotBalance">账期核对</button></div>
+    <p class="section-note">记录一个时间点的总资产与总负债，不管理账户。资产总账的"记录当前为资产快照"会按当前账户自动算出这三个数。</p>
+    <div class="btn-row"><button type="button" class="btn btn-primary" id="snapshotAdd">新增快照</button><button type="button" class="btn btn-secondary" id="snapshotFromLedgerFill">从资产总账填入</button></div>
+    <button type="button" class="btn btn-secondary" id="snapshotBalance">账期核对</button>
     <p id="snapshotListMsg" class="import-msg" role="status"></p>
     <div id="snapshotDeletePrompt" class="snapshot-delete-prompt" hidden>
       <p id="snapshotDeleteLabel"></p>
@@ -268,6 +282,54 @@
       <p class="snapshot-net">净资产 <output id="snapshotNet">—</output></p>
       <p id="snapshotEditMsg" class="form-error" role="alert"></p>
       <button type="submit" class="btn btn-primary" id="snapshotSave">保存快照</button>
+    </form>
+  </dialog>
+
+  <dialog id="assetLedgerDialog" class="sheet" aria-labelledby="assetLedgerTitle">
+    <div class="sheet-header"><h2 id="assetLedgerTitle">资产总账</h2><button type="button" class="sheet-close" id="assetLedgerClose" aria-label="关闭资产总账">×</button></div>
+    <p class="section-note">记录当前有哪些账户、各有多少钱，用于回答"现在有多少钱、钱在哪里"。历史变化请看资产快照。</p>
+    <dl class="balance-values ledger-totals">
+      <dt>总资产</dt><dd id="ledgerTotal">¥0.00</dd>
+      <dt>总负债</dt><dd id="ledgerLiability">¥0.00</dd>
+      <dt>净资产</dt><dd id="ledgerNet">¥0.00</dd>
+    </dl>
+    <div id="accountList" class="account-list"></div>
+    <div class="btn-row">
+      <button type="button" class="btn btn-primary" id="accountAdd">添加账户</button>
+      <button type="button" class="btn btn-secondary" id="snapshotFromLedger">记录当前为资产快照</button>
+    </div>
+    <div id="accountDeletePrompt" class="snapshot-delete-prompt" hidden>
+      <p id="accountDeleteLabel"></p>
+      <div class="btn-row"><button type="button" class="btn btn-danger" id="accountDeleteConfirm">确认删除账户</button><button type="button" class="btn btn-secondary" id="accountDeleteCancel">取消</button></div>
+    </div>
+    <p id="accountMsg" class="import-msg" role="status" aria-live="polite"></p>
+  </dialog>
+
+  <dialog id="accountEditDialog" class="sheet" aria-labelledby="accountEditTitle">
+    <div class="sheet-header"><h2 id="accountEditTitle">添加账户</h2><button type="button" class="sheet-close" id="accountEditClose" aria-label="关闭账户编辑">×</button></div>
+    <form id="accountForm" class="sheet-form" novalidate>
+      <label>账户名称<input type="text" id="accountName" maxlength="40" placeholder="例如：微信 / 银行卡 / 现金" required></label>
+      <label>类型<select id="accountType"><option value="asset">资产</option><option value="liability">负债</option></select></label>
+      <label>余额（元）<input type="number" id="accountBalance" inputmode="decimal" min="0" step="0.01" required></label>
+      <label>备注（可选）<input type="text" id="accountNote" maxlength="80"></label>
+      <p class="section-note">负债请填正数，例如欠款 3000 填 3000。</p>
+      <p id="accountEditMsg" class="form-error" role="alert"></p>
+      <div class="btn-row"><button type="button" class="btn btn-secondary" id="accountCancel">取消</button><button type="submit" class="btn btn-primary" id="accountSave">保存账户</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="ledgerSnapshotDialog" class="sheet" aria-labelledby="ledgerSnapshotTitle">
+    <div class="sheet-header"><h2 id="ledgerSnapshotTitle">记录当前为资产快照</h2><button type="button" class="sheet-close" id="snapshotFromLedgerClose" aria-label="关闭记录快照">×</button></div>
+    <form id="ledgerSnapshotForm" class="sheet-form" novalidate>
+      <p class="section-note">总资产、总负债与净资产按当前资产总账自动计算，只需选择日期。保存总账与记录快照是两个独立动作。</p>
+      <label>日期<input type="date" id="ledgerSnapshotDate" required></label>
+      <dl class="balance-values ledger-totals">
+        <dt>总资产</dt><dd id="ledgerSnapshotTotal">¥0.00</dd>
+        <dt>总负债</dt><dd id="ledgerSnapshotLiability">¥0.00</dd>
+        <dt>净资产</dt><dd id="ledgerSnapshotNet">¥0.00</dd>
+      </dl>
+      <p id="ledgerSnapshotMsg" class="form-error" role="alert"></p>
+      <button type="submit" class="btn btn-primary" id="snapshotFromLedgerSave">保存快照</button>
     </form>
   </dialog>
 

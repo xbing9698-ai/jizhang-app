@@ -1,5 +1,9 @@
-// readWechatFile：浏览器中用 SheetJS 读取 File，cellDates 让时间序列号转 Date
+import { ensureXlsxLoaded } from './xlsx-loader.js';
+
+// readWechatFile：浏览器中用 SheetJS 读取 File，cellDates 让时间序列号转 Date。
+// XLSX 按需加载：只有真正解析 .xlsx 时才下载约 880KB 的 SheetJS，CSV 路径不会触发。
 export async function readWechatFile(file, buf = null) {
+  const XLSX = await ensureXlsxLoaded();
   buf ??= await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: 'array', cellDates: true });
   const sheet = wb.Sheets[wb.SheetNames[0]];
