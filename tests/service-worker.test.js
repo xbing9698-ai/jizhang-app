@@ -44,10 +44,10 @@ function runWorker({ fetchImpl } = {}) {
     clone() { return this; }
   };
   const cachesImpl = {
-    open: async name => name === 'jizhang-v36' ? shellHandle : runtimeHandle,
+    open: async name => name === 'jizhang-v37' ? shellHandle : runtimeHandle,
     // 浏览器中 caches.match 会依次搜索所有缓存（先建的外壳缓存优先）。
     match: async request => shellHandle.match(request).then(hit => hit || runtimeHandle.match(request)),
-    keys: async () => ['jizhang-v35', 'jizhang-v36', 'jizhang-runtime-v36', 'other-cache'],
+    keys: async () => ['jizhang-v35', 'jizhang-v36', 'jizhang-runtime-v36', 'jizhang-v37', 'jizhang-runtime-v37', 'other-cache'],
     delete: async name => { deleted.push(name); return true; }
   };
   const self = {
@@ -79,7 +79,7 @@ test('PWA更新重新获取首页与图标，不把旧HTTP资源带入新缓存�
   const worker = runWorker();
   await install(worker);
   assert.equal(worker.isActivated(), true);
-  for (const path of ['index.html','js/app.js','js/quick-entry.js','js/asset-ledger-ui.js','js/estimated-assets.js','js/snapshots.js','icons/icon-192.png','icons/icon-512.png','manifest.webmanifest']) {
+  for (const path of ['index.html','js/app.js','js/quick-entry.js','js/transaction-update.js','js/asset-ledger-ui.js','js/estimated-assets.js','js/snapshots.js','icons/icon-192.png','icons/icon-512.png','manifest.webmanifest']) {
     assert.equal(worker.shell.get(cacheKey(DEPLOY + path)), 'new-version');
   }
   assert.ok([...worker.shell.keys()].every(key => key.startsWith('/jizhang-app/')));
@@ -136,7 +136,7 @@ test('激活时只清理旧版本应用缓存，保留运行时缓存与无关�
   let activation;
   worker.listeners.activate({ waitUntil: promise => { activation = promise; } });
   await activation;
-  assert.deepEqual(worker.deleted, ['jizhang-v35']);
+  assert.deepEqual(worker.deleted, ['jizhang-v35','jizhang-v36','jizhang-runtime-v36']);
 });
 
 test('非GET请求与跨域不透明响应不被拦截或写入缓存', async () => {

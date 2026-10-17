@@ -1,6 +1,6 @@
 import { GENERIC_CSV_TEMPLATE } from './generic-csv.js';
 import { todayDate } from './manual.js';
-import { createSnapshot, reconcileBalance } from './snapshots.js';
+import { createSnapshot, reconcileBalance, formatSnapshotMoment } from './snapshots.js';
 import { reconciliationCandidates } from './reconciliation.js';
 import { currentBillingPeriod, customDateRange, rangeText } from './period.js';
 import { loadSnapshots, saveSnapshot, deleteSnapshot, saveReconciliation, loadAssetLedger } from './storage.js';
@@ -10,6 +10,7 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
   const el = id => document.getElementById(id);
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const money = n => '¥' + n.toLocaleString('zh-CN', {minimumFractionDigits:2,maximumFractionDigits:2});
+  const nowTime = () => { const d = new Date(), pad = n => String(n).padStart(2,'0'); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
   let snapshots = [], editingId = null, pendingDeleteId = null, currentPair = null, busy = false;
   let deferred = new Set();
   const key = p => JSON.stringify([p.manual.id,p.imported.id]);
@@ -32,7 +33,7 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
   }
   function renderSnapshots() {
     el('snapshotList').innerHTML = snapshots.length ? snapshots.map(s =>
-      `<div class="snapshot-row"><strong>${esc(s.date)} · 净资产 ${money(s.netAssets)}</strong><p>资产 ${money(s.totalAssets)} · 负债 ${money(s.totalLiabilities)}</p><p>${esc(s.note)}</p><div class="btn-row"><button type="button" class="text-button" data-edit="${esc(s.id)}">编辑</button><button type="button" class="text-button" data-delete="${esc(s.id)}">删除</button></div></div>`).join('') : '<p class="empty-hint">还没有资产快照</p>';
+      `<div class="snapshot-row"><strong>${esc(formatSnapshotMoment(s))} · 净资产 ${money(s.netAssets)}</strong><p>资产 ${money(s.totalAssets)} · 负债 ${money(s.totalLiabilities)}</p><p>${esc(s.note)}</p><div class="btn-row"><button type="button" class="text-button" data-edit="${esc(s.id)}">编辑</button><button type="button" class="text-button" data-delete="${esc(s.id)}">删除</button></div></div>`).join('') : '<p class="empty-hint">还没有资产快照</p>';
   }
   function cancelSnapshotDelete() { pendingDeleteId = null; el('snapshotDeletePrompt').hidden = true; }
   function openSnapshots() { cancelSnapshotDelete(); el('snapshotListMsg').textContent = ''; el('snapshotsDialog').showModal(); }
@@ -44,14 +45,19 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
     const s = snapshots.find(s => s.id === id);
     el('snapshotEditTitle').textContent = s ? '编辑快照' : '新增快照';
     el('snapshotDate').value = s?.date || date || todayDate();
+    el('snapshotTime').value = s?.capturedAt?.slice(11,16) || nowTime();
     el('snapshotAssets').value = s ? s.totalAssets : '';
     el('snapshotLiabilities').value = s ? s.totalLiabilities : '0';
     el('snapshotNote').value = s?.note || '';
     el('snapshotEditMsg').textContent = '';
     previewNet(); el('snapshotEditDialog').showModal();
   }
-  function snapshotInput() { return { date:el('snapshotDate').value, totalAssets:el('snapshotAssets').value,
-    totalLiabilities:el('snapshotLiabilities').value, note:el('snapshotNote').value }; }
+  function snapshotInput() {
+    const date = el('snapshotDate').value;
+    return { date, time:el('snapshotTime').value, totalAssets:el('snapshotAssets').value,
+      totalLiabilities:el('snapshotLiabilities').value, note:el('snapshotNote').value,
+      transactionIdsAtCapture:!editingId && date === todayDate() ? getTransactions().map(t => t.id) : undefined };
+  }
   function previewNet() {
     try { el('snapshotNet').textContent = money(createSnapshot(snapshotInput()).netAssets); }
     catch { el('snapshotNet').textContent = '—'; }
@@ -96,16 +102,16 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
   el('snapshotDeleteConfirm').addEventListener('click',async () => {
     if (busy || !pendingDeleteId) return;
     setBusy(true);
-    try { await deleteSnapshot(pendingDeleteId); await load(); el('snapshotListMsg').textContent = '快照已删除。'; }
+    try { await deleteSnapshot(pendingDeleteId); await load(); refreshApp(); el('snapshotListMsg').textContent = '快照已删除。'; }
     catch (error) { el('snapshotListMsg').textContent = error.message; }
     finally { setBusy(false); }
   });
-  ['snapshotDate','snapshotAssets','snapshotLiabilities'].forEach(id => el(id).addEventListener('input',previewNet));
+  ['snapshotDate','snapshotTime','snapshotAssets','snapshotLiabilities'].forEach(id => el(id).addEventListener('input',previewNet));
   el('snapshotEditClose').addEventListener('click',() => { if (!busy) el('snapshotEditDialog').close(); });
   el('snapshotEditDialog').addEventListener('cancel',e => { if (busy) e.preventDefault(); });
   el('snapshotForm').addEventListener('submit',async e => {
     e.preventDefault(); if (busy) return; setBusy(true);
-    try { await saveSnapshot(snapshotInput(),editingId); await load(); el('snapshotEditDialog').close(); el('snapshotListMsg').textContent = '快照已保存。'; }
+    try { await saveSnapshot(snapshotInput(),editingId); await load(); refreshApp(); el('snapshotEditDialog').close(); el('snapshotListMsg').textContent = '快照已保存。'; }
     catch (error) { el('snapshotEditMsg').textContent = error.message; }
     finally { setBusy(false); }
   });
@@ -176,7 +182,7 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
     const url = URL.createObjectURL(new Blob([GENERIC_CSV_TEMPLATE],{type:'text/csv;charset=utf-8'}));
     const a = document.createElement('a'); a.href = url; a.download = '通用账单模板.csv'; a.click(); URL.revokeObjectURL(url);
   });
-  return { load, refresh, newSnapshot, async undo(id) {
+  return { load, refresh, newSnapshot, getSnapshots:() => snapshots.slice(), async undo(id) {
     const updated = await saveReconciliation(id,null,'undo'); updateTransaction(updated); refreshApp();
   } };
 }

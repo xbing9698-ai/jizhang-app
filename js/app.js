@@ -1,6 +1,6 @@
 import { fileToTransactions } from './import-transactions.js';
 import { mergeTransactions } from './dedup.js';
-import { resolveCategory, CATEGORIES, INCOME_CATEGORIES, transactionCategories } from './classify.js';
+import { resolveCategory, CATEGORIES, INCOME_CATEGORIES } from './classify.js';
 import {
   summarize,
   groupByCounterparty,
@@ -9,7 +9,10 @@ import {
 import { billingPeriodRange, currentBillingPeriod, customDateRange, allTimeRange, usageTimeRange, rangeText, prevPeriodRange, filterTransactionsByRange, billingPeriodLabel } from './period.js';
 import { renderCategoryPie, renderTrend, colorForCategory } from './charts.js';
 import { iconSvg } from './icons.js';
-import { isManualTransaction } from './manual.js';
+import { isManualTransaction, todayDate } from './manual.js';
+import { updateTransactionFields, editAffectsReconciliation } from './transaction-update.js';
+import { latestSnapshot, referenceFromSnapshot, formatSnapshotMoment } from './snapshots.js';
+import { calculateLedgerTotals, hasLedgerAccounts } from './asset-ledger.js';
 import { isReconciledDuplicate, reconciliationCandidates } from './reconciliation.js';
 import { setupLedgerTools } from './ledger-tools.js';
 import { setupAssetLedgerUI } from './asset-ledger-ui.js';
@@ -18,7 +21,7 @@ import { newQuickEntry, keypadAmount, createQuickTransaction, setQuickDirection 
 import { countedExpenseAmount, isValidCountedAmount, canAdjustTransaction, needsReview, filterNeedsReview } from './review.js';
 import {
   saveTransactions, loadAllTransactions, loadMemory,
-  clearAllData, exportBackup, importBackup, deleteManualTransaction, saveExpenseAdjustment, saveTransactionCategory,
+  clearAllData, exportBackup, importBackup, deleteManualTransaction, saveExpenseAdjustment,
   loadSnapshots
 } from './storage.js';
 
@@ -66,7 +69,9 @@ async function onFiles(files) {
     lastImport = { added, skipped };
     refreshAll();
     const duplicateCount = reconciliationCandidates(transactions).length;
-    if (!filterNeedsReview(transactions).length && !duplicateCount)
+    if (duplicateCount) document.getElementById('quickFeedback').textContent =
+      `已导入：新增 ${added} 条，重复跳过 ${skipped} 条。发现 ${duplicateCount} 组疑似重复，请先核对；确认前统计可能暂时重复。`;
+    else if (!filterNeedsReview(transactions).length)
       document.getElementById('quickFeedback').textContent = `已导入：新增 ${added} 条，重复跳过 ${skipped} 条。`;
     switchView(filterNeedsReview(transactions).length || duplicateCount ? 'import' : 'overview');
   } catch (err) {
@@ -264,7 +269,7 @@ function rowHtml(t) {
 function renderListView(rows) {
   const list = document.getElementById('txnList');
   document.getElementById('tableEmpty').hidden = rows.length > 0;
-  document.getElementById('tableEmpty').textContent = document.getElementById('onlyNeedsReview').checked
+  document.getElementById('tableEmptyText').textContent = document.getElementById('onlyNeedsReview').checked
     ? '当前范围和筛选下无需处理' : '没有符合条件的记录';
   list.innerHTML = rows.map(rowHtml).join('');
   list.querySelectorAll('.transaction-row').forEach(button => button.addEventListener('click', onOpenAdjustment));
@@ -273,38 +278,84 @@ function renderListView(rows) {
 const adjustmentDialog = document.getElementById('adjustmentDialog');
 let adjustingId = null;
 
+function editorCategories(direction, current = '') {
+  const choices = direction === '收入' ? INCOME_CATEGORIES : CATEGORIES;
+  return current && choices.includes(current) ? choices : [...new Set([...(current ? [current] : []), ...choices])];
+}
+
+function syncEditorCategories(preferred = '') {
+  const direction = document.getElementById('transactionDirection').value;
+  const select = document.getElementById('transactionCategory');
+  const current = preferred || select.value || '其他';
+  const choices = editorCategories(direction, current);
+  select.innerHTML = choices.map(cat => '<option value="' + esc(cat) + '">' + esc(cat) + '</option>').join('');
+  select.value = choices.includes(current) ? current : (choices.includes('其他') ? '其他' : choices[0]);
+}
+
 function onOpenAdjustment(e) {
   const record = transactions.find(t => t.id === e.currentTarget.dataset.id);
   if (!record) return;
   adjustingId = record.id;
-  const facts = [
-    ['日期', String(record.datetime || '').replace('T', ' ')], ['来源', record.source],
-    ['原始金额', fmtMoney(record.amount)],
-    ['商户 / 说明', [record.counterparty, record.description].filter(Boolean).join(' / ') || '—'],
-    ['原始分类', record.rawCategory || '—'], ['交易状态', record.status || '—']
-  ];
+  const facts = [['来源', record.source || '—']];
+  if (!isManualTransaction(record)) facts.push(['商户（只读）', record.counterparty || '—']);
+  if (record.rawCategory) facts.push(['账单原分类', record.rawCategory]);
+  if (record.status) facts.push(['交易状态', record.status]);
   document.getElementById('adjustmentFacts').innerHTML = facts.map(([key,value]) =>
     `<dt>${esc(key)}</dt><dd>${esc(value)}</dd>`).join('');
-  const choices = transactionCategories(record);
-  const current = record.myCategory || '其他';
-  const options = choices.includes(current) ? choices : [current,...choices];
-  document.getElementById('transactionCategory').innerHTML = options.map(cat => '<option value="' + esc(cat) + '"' + (cat === current ? ' selected' : '') + '>' + esc(cat) + '</option>').join('');
+  document.getElementById('transactionAmount').value = String(record.amount);
+  document.getElementById('transactionDate').value = String(record.datetime || '').slice(0,10);
+  document.getElementById('transactionDirection').value = ['支出','收入','中性'].includes(record.direction) ? record.direction : '中性';
+  syncEditorCategories(record.myCategory || '其他');
+  document.getElementById('transactionDescription').value = record.description || (isManualTransaction(record) ? record.counterparty || '' : '');
   document.getElementById('categoryMsg').textContent = '';
-  document.getElementById('adjustmentControls').hidden = !canAdjustTransaction(record);
-  document.getElementById('adjustmentControls').open = false;
+  const controls = document.getElementById('adjustmentControls');
+  controls.hidden = !canAdjustTransaction(record);
   document.getElementById('transactionDelete').hidden = !isManualTransaction(record);
   document.getElementById('transactionDelete').dataset.id = record.id;
   const undo = document.getElementById('reconciliationUndo');
   if (undo) { undo.hidden = !isReconciledDuplicate(record); undo.dataset.id = record.id; }
-
   const amount = document.getElementById('adjustmentAmount');
   amount.max = String(record.amount);
   amount.value = String(isValidCountedAmount(record.countedAmount, record.amount) ? record.countedAmount : record.amount);
   document.getElementById('adjustmentRule').textContent = record.status === '交易关闭'
-    ? '交易关闭仍自动不计入统计。' : '原始账单信息保留，只调整支出统计。';
+    ? '交易关闭仍自动不计入统计。' : '这里只处理是否计入支出统计；普通金额、日期和说明请用上方“保存修改”。';
   document.getElementById('adjustmentMsg').textContent = '';
   if (!adjustmentDialog.open) adjustmentDialog.showModal();
 }
+
+document.getElementById('transactionDirection').addEventListener('change', () => syncEditorCategories('其他'));
+document.getElementById('transactionEditForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!adjustingId) return;
+  const controls = adjustmentDialog.querySelectorAll('button,select,input');
+  controls.forEach(control => { control.disabled = true; });
+  const msg = document.getElementById('categoryMsg');
+  try {
+    const before = transactions.find(t => t.id === adjustingId);
+    if (!before) throw new Error('记录不存在');
+    let updated = updateTransactionFields(before, {
+      amount:document.getElementById('transactionAmount').value,
+      date:document.getElementById('transactionDate').value,
+      direction:document.getElementById('transactionDirection').value,
+      category:document.getElementById('transactionCategory').value,
+      description:document.getElementById('transactionDescription').value
+    });
+    const changed = new Map([[updated.id, updated]]);
+    if (editAffectsReconciliation(before, updated)) {
+      if (updated.reconciledDuplicateOf) {
+        updated = { ...updated }; delete updated.reconciledDuplicateOf; changed.set(updated.id, updated);
+      }
+      for (const t of transactions) if (t.reconciledDuplicateOf === before.id) {
+        const copy = { ...t }; delete copy.reconciledDuplicateOf; changed.set(copy.id, copy);
+      }
+    }
+    await saveTransactions([...changed.values()]);
+    transactions = transactions.map(t => changed.get(t.id) || t);
+    classifyAll(); refreshAll(); adjustmentDialog.close();
+    document.getElementById('adjustmentFeedback').textContent = '交易修改已保存，统计已更新。';
+  } catch (error) { msg.textContent = error.message; }
+  finally { controls.forEach(control => { control.disabled = false; }); }
+});
 
 async function onSaveAdjustment(action) {
   const buttons = adjustmentDialog.querySelectorAll('button');
@@ -315,28 +366,19 @@ async function onSaveAdjustment(action) {
     const updated = await saveExpenseAdjustment(adjustingId, action,
       document.getElementById('adjustmentAmount').value);
     transactions = transactions.map(t => t.id === updated.id ? updated : t);
-    classifyAll();
-    refreshAll();
-    adjustmentDialog.close();
+    classifyAll(); refreshAll(); adjustmentDialog.close();
     document.getElementById('adjustmentFeedback').textContent = '处理已保存，统计已更新。';
-  } catch (error) {
-    msg.textContent = error.message;
-  } finally {
-    buttons.forEach(button => { button.disabled = false; });
-  }
+  } catch (error) { msg.textContent = error.message; }
+  finally { buttons.forEach(button => { button.disabled = false; }); }
 }
 
 document.getElementById('adjustmentInclude').addEventListener('click', () => onSaveAdjustment('include'));
 document.getElementById('adjustmentExclude').addEventListener('click', () => onSaveAdjustment('exclude'));
-document.getElementById('adjustmentForm').addEventListener('submit', e => {
-  e.preventDefault();
-  onSaveAdjustment('amount');
-});
+document.getElementById('adjustmentForm').addEventListener('submit', e => { e.preventDefault(); onSaveAdjustment('amount'); });
 document.getElementById('adjustmentClose').addEventListener('click', () => {
-  if (!document.getElementById('saveCategory').disabled) adjustmentDialog.close();
+  if (!document.getElementById('saveTransaction').disabled) adjustmentDialog.close();
 });
-adjustmentDialog.addEventListener('cancel', e => { if (document.getElementById('saveCategory').disabled) e.preventDefault(); });
-document.getElementById('saveCategory').addEventListener('click', onChangeCategory);
+adjustmentDialog.addEventListener('cancel', e => { if (document.getElementById('saveTransaction').disabled) e.preventDefault(); });
 document.getElementById('transactionDelete').addEventListener('click', onDeleteManual);
 document.getElementById('reconciliationUndo').addEventListener('click',async e => {
   const button = e.currentTarget;
@@ -356,23 +398,18 @@ async function onDeleteManual(e) {
   const id = button.dataset.id;
   const record = transactions.find(t => t.id === id);
   if (!isManualTransaction(record) || button.disabled) return;
-  if (!confirm('删除这条手动记账记录？输错后可重新记一笔。')) return;
+  if (!confirm('删除这条手动记账记录？')) return;
   button.disabled = true;
   const msg = document.getElementById('manualDeleteMsg');
   msg.className = 'import-msg';
   try {
     await deleteManualTransaction(id);
     transactions = transactions.filter(t => t.id !== id);
-    refreshAll();
-    adjustmentDialog.close();
-    msg.textContent = '手动记录已删除，统计已更新。';
-    msg.classList.add('ok');
+    refreshAll(); adjustmentDialog.close();
+    msg.textContent = '手动记录已删除，统计已更新。'; msg.classList.add('ok');
   } catch (err) {
-    msg.textContent = '删除失败：' + err.message;
-    msg.classList.add('error');
-  } finally {
-    button.disabled = false;
-  }
+    msg.textContent = '删除失败：' + err.message; msg.classList.add('error');
+  } finally { button.disabled = false; }
 }
 
 function renderMerchantView(rows) {
@@ -414,23 +451,6 @@ function renderMerchantView(rows) {
   }));
 }
 
-async function onChangeCategory() {
-  if (!adjustingId || document.getElementById('saveCategory').disabled) return;
-  const controls = adjustmentDialog.querySelectorAll('button,select,input');
-  controls.forEach(control => { control.disabled = true; });
-  try {
-    const plan = await saveTransactionCategory(adjustingId, document.getElementById('transactionCategory').value);
-    const changed = new Map(plan.touched.map(t => [t.id,t]));
-    transactions = transactions.map(t => changed.get(t.id) || t);
-    if (plan.memoryEntry) memory[plan.memoryEntry.counterparty] = plan.memoryEntry.category;
-    classifyAll();
-    refreshAll();
-    adjustmentDialog.close();
-    document.getElementById('adjustmentFeedback').textContent = '分类已保存。';
-  } catch (error) { document.getElementById('categoryMsg').textContent = error.message; }
-  finally { controls.forEach(control => { control.disabled = false; }); }
-}
-
 function populateCategoryFilter() {
   const sel = document.getElementById('filterCategory');
   const cur = sel.value;
@@ -459,6 +479,7 @@ function updateFilterButton() {
     ['onlyUncat','onlyNeedsReview'].filter(id => document.getElementById(id).checked).length;
   document.getElementById('filterOpen').textContent = count ? '筛选 · ' + count : '筛选';
 }
+document.getElementById('emptyImport').addEventListener('click', () => switchView('import'));
 document.getElementById('overviewDetail').addEventListener('click', () => {
   ['filterSource','filterCategory','filterDirection'].forEach(id => { document.getElementById(id).value = ''; });
   ['onlyUncat','onlyNeedsReview'].forEach(id => { document.getElementById(id).checked = false; });
@@ -502,6 +523,68 @@ function directionClass(t) {
   if (t.direction === '收入') return 'income';
   if (t.direction === '支出') return 'expense';
   return 'neutral';
+}
+
+
+function billingOptionLabel(label) {
+  const r = billingPeriodRange(label);
+  const parts = d => d.split('-').map(Number);
+  const [sy,sm,sd] = parts(r.start), [ey,em,ed] = parts(r.end);
+  return sy === ey ? `${sm}月${sd}日－${em}月${ed}日` : `${sy}年${sm}月${sd}日－${ey}年${em}月${ed}日`;
+}
+
+function populateBillingPeriodSelect() {
+  const labels = new Set([currentBillingPeriod().label]);
+  if (range?.label && !range.mode) labels.add(range.label);
+  for (const t of transactions) {
+    const label = billingPeriodLabel(t.datetime);
+    if (label) labels.add(label);
+  }
+  const select = document.getElementById('monthPick');
+  const options = [...labels].sort((a,b) => b.localeCompare(a));
+  select.innerHTML = options.map(label => `<option value="${esc(label)}">${esc(billingOptionLabel(label))}</option>`).join('');
+}
+
+function signedMoney(value) {
+  if (value === 0) return '¥0.00';
+  return (value > 0 ? '+' : '−') + fmtMoney(Math.abs(value));
+}
+
+function renderAssetReference() {
+  const ledger = assetLedgerUI.getLedger();
+  const hasLedger = hasLedgerAccounts(ledger);
+  const totals = hasLedger ? calculateLedgerTotals(ledger.accounts) : null;
+  const latest = latestSnapshot(ledgerTools.getSnapshots());
+  const empty = document.getElementById('assetCurrentEmpty');
+  const body = document.getElementById('assetCurrentBody');
+  document.getElementById('assetLedgerOpen').hidden = !hasLedger && !latest;
+  if (!latest && !hasLedger) {
+    empty.hidden = false; body.hidden = true;
+    document.getElementById('assetUpdated').textContent = '';
+    return;
+  }
+  empty.hidden = true; body.hidden = false;
+  const warning = document.getElementById('assetReferenceWarning');
+  if (latest) {
+    const ref = referenceFromSnapshot(latest, transactions);
+    document.getElementById('assetNetLabel').textContent = '参考当前净资产';
+    document.getElementById('assetNet').textContent = fmtMoney(ref.referenceNetAssets);
+    document.getElementById('assetReferenceMeta').textContent = `最近盘点 ${formatSnapshotMoment(latest)} · 实际净资产 ${fmtMoney(latest.netAssets)}`;
+    document.getElementById('assetReferenceChange').textContent = `盘点后变化 ${signedMoney(ref.delta)} · 收入 ${fmtMoney(ref.income)} · 支出 ${fmtMoney(ref.expense)}`;
+    warning.hidden = !ref.uncertainCount;
+    warning.textContent = ref.uncertainCount ? `有 ${ref.uncertainCount} 笔同日无准确时间的流水需要核对，参考值可能有偏差。` : '';
+    document.getElementById('assetTotal').textContent = fmtMoney(totals ? totals.totalAssets : latest.totalAssets);
+    document.getElementById('assetLiability').textContent = fmtMoney(totals ? totals.totalLiabilities : latest.totalLiabilities);
+  } else {
+    document.getElementById('assetNetLabel').textContent = '当前净资产';
+    document.getElementById('assetNet').textContent = fmtMoney(totals.netAssets);
+    document.getElementById('assetReferenceMeta').textContent = '记录一次资产快照后，将从真实盘点时点开始推算参考当前净资产。';
+    document.getElementById('assetReferenceChange').textContent = '';
+    warning.hidden = true; warning.textContent = '';
+    document.getElementById('assetTotal').textContent = fmtMoney(totals.totalAssets);
+    document.getElementById('assetLiability').textContent = fmtMoney(totals.totalLiabilities);
+  }
+  document.getElementById('assetUpdated').textContent = hasLedger && ledger.updatedAt ? `总账更新于 ${ledger.updatedAt.slice(0,10)}` : '';
 }
 
 // 环比变化文字（本期 vs 上期），返回 {text, cls}
@@ -620,6 +703,7 @@ function refreshDashboard() {
   trendCard.hidden = !hasData;
   if (hasData) renderTrend(document.getElementById('trendChart'), s.byDay);
   renderPeriodTable();
+  renderAssetReference();
 }
 
 document.getElementById('monthPick').addEventListener('change', e => {
@@ -653,6 +737,7 @@ function refreshAll() {
   refreshReviewNotice();
   ledgerTools.refresh();
   const mode = !range.start ? 'all' : range.mode === 'custom' ? 'custom' : range.mode === 'usage' ? 'usage' : 'billing';
+  populateBillingPeriodSelect();
   document.getElementById('monthPick').value = mode === 'billing' ? range.label : '';
   document.getElementById('billingMonthWrap').hidden = mode !== 'billing';
   for (const [id,value] of [['billingRange','billing'],['customRangeOpen','custom'],['allRange','all']])
@@ -708,7 +793,13 @@ const ledgerTools = setupLedgerTools({
 });
 const assetLedgerUI = setupAssetLedgerUI({
   refreshApp:refreshAll,
-  refreshSnapshots:() => ledgerTools.load()
+  refreshSnapshots:() => ledgerTools.load(),
+  getTransactions:() => transactions
+});
+document.getElementById('assetSnapshotNow').addEventListener('click', async () => {
+  const ledger = assetLedgerUI.getLedger();
+  if (hasLedgerAccounts(ledger)) assetLedgerUI.openSnapshotFromLedger();
+  else await ledgerTools.newSnapshot(todayDate());
 });
 (async () => {
   try {

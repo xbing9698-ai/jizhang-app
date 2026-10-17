@@ -485,7 +485,7 @@ async function onDeleteManual(e) {
   } finally { button.disabled = false; }
 }
 `;
-replaceRegex('js/app.js', /const adjustmentDialog = document\.getElementById\('adjustmentDialog'\);[\s\S]*?\nfunction renderMerchantView\(rows\) \{/, adjustmentBlock + '\nfunction renderMerchantView(rows) {', 'transactionEditForm').catch?.(() => {});
+replaceRegex('js/app.js', /const adjustmentDialog = document\.getElementById\('adjustmentDialog'\);[\s\S]*?\nfunction renderMerchantView\(rows\) \{/, adjustmentBlock + '\nfunction renderMerchantView(rows) {', 'transactionEditForm');
 
 // The helper above is synchronous; marker guard is handled by checking source explicitly here.
 if (!read('js/app.js').includes("document.getElementById('transactionEditForm').addEventListener")) {
