@@ -11,7 +11,7 @@ test('参考当前净资产从最近真实快照时点之后的流水推算', ()
   ];
   const r=referenceFromSnapshot(s,rows,new Date(2026,9,17,20,0,0));
   assert.equal(r.referenceNetAssets,5070);assert.equal(r.income,100);assert.equal(r.expense,30);assert.equal(r.uncertainCount,0);
-  assert.equal(formatSnapshotMoment(s),'2026-10-17 12:00');
+  assert.equal(formatSnapshotMoment(s),'2026-10-17 12:00:00');
 });
 
 test('同日无时间流水用快照水印判断是否已存在，快照后才出现则标记不确定', () => {

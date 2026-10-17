@@ -1,4 +1,4 @@
-import { createSnapshot } from './snapshots.js';
+import { createSnapshot, snapshotTimeNow } from './snapshots.js';
 import { loadAssetLedger, saveAssetLedger, saveSnapshot } from './storage.js';
 import {
   emptyLedger, addAccount, updateAccount, removeAccount, calculateLedgerTotals,
@@ -9,7 +9,6 @@ import { todayDate } from './manual.js';
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c =>
   ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const money = n => '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits:2, maximumFractionDigits:2 });
-const nowTime = () => { const d = new Date(), pad = n => String(n).padStart(2,'0'); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 
 // 资产总账 = 当前状态。保存总账与记录快照是两个独立动作：
 // 改余额只写总账，快照只在用户点击"记录当前为资产快照"时生成。
@@ -143,7 +142,7 @@ export function setupAssetLedgerUI({ refreshApp, refreshSnapshots, getTransactio
   function openSnapshotFromLedger() {
     const totals = calculateLedgerTotals(ledger.accounts);
     el('ledgerSnapshotDate').value = todayDate();
-    el('ledgerSnapshotTime').value = nowTime();
+    el('ledgerSnapshotTime').value = snapshotTimeNow();
     el('ledgerSnapshotTotal').textContent = money(totals.totalAssets);
     el('ledgerSnapshotLiability').textContent = money(totals.totalLiabilities);
     el('ledgerSnapshotNet').textContent = money(totals.netAssets);
@@ -166,7 +165,7 @@ export function setupAssetLedgerUI({ refreshApp, refreshSnapshots, getTransactio
   });
 
   // 用资产总账的自动合计生成一条资产快照；用户只需要日期。
-  async function recordLedgerSnapshot(date, time = nowTime()) {
+  async function recordLedgerSnapshot(date, time = snapshotTimeNow()) {
     if (!hasLedgerAccounts(ledger)) throw new Error('还没有建立资产总账');
     const totals = calculateLedgerTotals(ledger.accounts);
     const saved = await saveSnapshot({

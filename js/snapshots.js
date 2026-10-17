@@ -1,4 +1,4 @@
-import { billingPeriodLabel, customDateRange } from './period.js';
+import { billingPeriodLabel, customDateRange, filterTransactionsByRange } from './period.js';
 import { summarize } from './aggregate.js';
 
 function money(value, label) {
@@ -17,6 +17,11 @@ function normalizedTime(value) {
   return `${m[1]}:${m[2]}:${m[3] || '00'}`;
 }
 
+export function snapshotTimeNow(now = new Date()) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
 function normalizedCapturedAt(value) {
   const text = String(value ?? '').trim();
   const m = text.match(/^(\d{4}-\d{2}-\d{2})T([0-2]\d:[0-5]\d(?::[0-5]\d)?)$/);
@@ -31,10 +36,13 @@ export function createSnapshot(input, existing = null) {
   const totalLiabilities = money(input.totalLiabilities, '总负债');
   const explicitCapturedAt = normalizedCapturedAt(input.capturedAt);
   const explicitTime = input.time == null ? '' : normalizedTime(input.time);
-  const capturedAt = explicitCapturedAt || (explicitTime ? `${input.date}T${explicitTime}` : (existing?.capturedAt || ''));
-  const sameMoment = !!existing?.capturedAt && existing.capturedAt === capturedAt;
+  const capturedAt = explicitCapturedAt || (explicitTime ? `${input.date}T${explicitTime}` :
+    (existing?.capturedAt ? `${input.date}T${existing.capturedAt.slice(11)}` : ''));
+  if (capturedAt && capturedAt.slice(0,10) !== input.date) throw new Error('快照日期与时间不一致');
+  const sameMoment = !!existing && existing.date === input.date && (existing.capturedAt || '') === capturedAt;
   let transactionIdsAtCapture;
-  if (Array.isArray(input.transactionIdsAtCapture)) transactionIdsAtCapture = [...new Set(input.transactionIdsAtCapture.filter(id => typeof id === 'string' && id))];
+  // 改动时点后旧水印失效，不能把原时点的“已包含”判断带到新时点。
+  if ((!existing || sameMoment) && Array.isArray(input.transactionIdsAtCapture)) transactionIdsAtCapture = [...new Set(input.transactionIdsAtCapture.filter(id => typeof id === 'string' && id))];
   else if (sameMoment && Array.isArray(existing?.transactionIdsAtCapture)) transactionIdsAtCapture = existing.transactionIdsAtCapture.slice();
   const snapshot = {
     id:existing?.id || `snapshot:${crypto.randomUUID()}`, date:input.date,
@@ -53,7 +61,7 @@ export function snapshotMoment(snapshot) {
 
 export function formatSnapshotMoment(snapshot) {
   if (!snapshot?.date) return '';
-  return snapshot.capturedAt ? `${snapshot.date} ${snapshot.capturedAt.slice(11,16)}` : `${snapshot.date}（旧快照）`;
+  return snapshot.capturedAt ? `${snapshot.date} ${snapshot.capturedAt.slice(11)}` : `${snapshot.date}（旧快照）`;
 }
 
 export function sortSnapshots(snapshots) {
@@ -109,29 +117,21 @@ function notFuture(transaction, now = new Date()) {
 
 export function summarizeSnapshotChanges(opening, transactions, range = null, closing = null) {
   let uncertainCount = 0;
-  const changes = (transactions || []).filter(t => {
+  const changes = filterTransactionsByRange(transactions || [], range).filter(t => {
     const afterOpening = relationToSnapshot(opening, t);
-    if (afterOpening.relation <= 0) return false;
-    if (closing) {
-      const beforeClosing = relationToSnapshot(closing, t);
-      if (beforeClosing.relation > 0) return false;
-      if (afterOpening.uncertain || beforeClosing.uncertain) uncertainCount++;
-    } else if (afterOpening.uncertain) uncertainCount++;
-    return true;
+    const beforeClosing = closing ? relationToSnapshot(closing, t) : null;
+    if (!afterOpening.uncertain && afterOpening.relation <= 0) return false;
+    if (beforeClosing && !beforeClosing.uncertain && beforeClosing.relation > 0) return false;
+    // 临时排除的流水也必须提示不确定，不能只统计被纳入公式的流水。
+    if (afterOpening.uncertain || beforeClosing?.uncertain) uncertainCount++;
+    return afterOpening.relation > 0 && (!beforeClosing || beforeClosing.relation <= 0);
   });
-  return { ...summarize(changes, range), uncertainCount };
+  return { ...summarize(changes, null), uncertainCount };
 }
 
 export function referenceFromSnapshot(snapshot, transactions, now = new Date()) {
   if (!snapshot) return null;
-  let uncertainCount = 0;
-  const after = (transactions || []).filter(t => {
-    if (!notFuture(t, now)) return false;
-    const rel = relationToSnapshot(snapshot, t);
-    if (rel.relation > 0 && rel.uncertain) uncertainCount++;
-    return rel.relation > 0;
-  });
-  const summary = summarize(after, null);
+  const summary = summarizeSnapshotChanges(snapshot, (transactions || []).filter(t => notFuture(t, now)));
   const delta = Math.round((summary.totalIncome - summary.totalExpense) * 100) / 100;
   return {
     snapshotNetAssets:snapshot.netAssets,
@@ -139,7 +139,7 @@ export function referenceFromSnapshot(snapshot, transactions, now = new Date()) 
     expense:summary.totalExpense,
     delta,
     referenceNetAssets:(Math.round(snapshot.netAssets * 100) + Math.round(delta * 100)) / 100,
-    uncertainCount
+    uncertainCount:summary.uncertainCount
   };
 }
 
@@ -149,6 +149,6 @@ export function reconcileBalance(opening, closing, transactions, range) {
   customDateRange(range?.start, range?.end);
   const { totalIncome:income, totalExpense:expense, uncertainCount } = summarizeSnapshotChanges(opening, transactions, range, closing);
   const theoretical = (Math.round(opening.netAssets * 100) + Math.round(income * 100) - Math.round(expense * 100)) / 100;
-  return { opening:opening.netAssets, income, expense, theoretical, actual:closing.netAssets,
+  return { opening:opening.netAssets, income, expense, theoretical, actual:closing.netAssets, uncertainCount,
     difference:(Math.round(closing.netAssets * 100) - Math.round(theoretical * 100)) / 100 };
 }

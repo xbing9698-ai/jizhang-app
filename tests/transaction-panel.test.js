@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { CATEGORIES, INCOME_CATEGORIES } from '../js/classify.js';
 import { isManualTransaction } from '../js/manual.js';
 import { canAdjustTransaction, isValidCountedAmount } from '../js/review.js';
+import { editableTransactionCategories } from '../js/transaction-update.js';
 
 const app=readFileSync(new URL('../js/app.js',import.meta.url),'utf8');
 const editor=app.slice(app.indexOf('function editorCategories('),app.indexOf("document.getElementById('transactionDirection').addEventListener"));
@@ -14,7 +15,7 @@ for(const [source,direction,category,adjustable,deletable] of [['微信','支出
     const ids=['adjustmentFacts','transactionAmount','transactionDate','transactionDirection','transactionCategory','transactionDescription','categoryMsg','adjustmentControls','transactionDelete','reconciliationUndo','adjustmentAmount','adjustmentRule','adjustmentMsg'];
     const elements=Object.fromEntries(ids.map(id=>[id,{dataset:{},value:'',hidden:false,innerHTML:'',textContent:''}]));
     const dialog={open:false,showModal(){this.open=true;}};
-    const context={transactions:[record],adjustingId:null,CATEGORIES,INCOME_CATEGORIES,isManualTransaction,canAdjustTransaction,isValidCountedAmount,
+    const context={transactions:[record],adjustingId:null,CATEGORIES,INCOME_CATEGORIES,editableTransactionCategories,isManualTransaction,canAdjustTransaction,isValidCountedAmount,
       esc:s=>String(s??''),isReconciledDuplicate:()=>false,adjustmentDialog:dialog,document:{getElementById:id=>elements[id]}};
     vm.runInNewContext(editor+'\nonOpenAdjustment({currentTarget:{dataset:{id:"test-id"}}});',context);
     assert.equal(dialog.open,true);assert.equal(context.adjustingId,record.id);

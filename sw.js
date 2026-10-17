@@ -3,8 +3,8 @@
 // 离线时回退已有缓存。按需资源（如 XLSX）走缓存优先并允许运行时缓存。
 //
 // CACHE 版本号仍然保留，但它只用于预缓存与清理旧缓存，不再是"必须手改否则永不更新"的唯一机制。
-const CACHE = 'jizhang-v37';
-const RUNTIME_CACHE = 'jizhang-runtime-v37';
+const CACHE = 'jizhang-v38';
+const RUNTIME_CACHE = 'jizhang-runtime-v38';
 // 应用外壳：这些文件必须尽量保持同一版本，避免 HTML 与 JS/CSS 新旧混搭。
 const SHELL = [
   './index.html', './css/style.css',

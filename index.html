@@ -291,7 +291,8 @@
     <div class="sheet-header"><h2 id="snapshotEditTitle">新增快照</h2><button type="button" class="sheet-close" id="snapshotEditClose" aria-label="关闭快照输入">×</button></div>
     <form id="snapshotForm" class="sheet-form" novalidate>
       <label>日期<input type="date" id="snapshotDate" required></label>
-      <label>时间<input type="time" id="snapshotTime" step="60" required></label>
+      <label>时间<input type="time" id="snapshotTime" step="1" required></label>
+      <p id="snapshotTimeNote" class="section-note"></p>
       <label>总资产（元）<input type="number" id="snapshotAssets" inputmode="decimal" min="0" step="0.01" required></label>
       <label>总负债（元）<input type="number" id="snapshotLiabilities" inputmode="decimal" min="0" step="0.01" value="0" required></label>
       <label>备注（可选）<input type="text" id="snapshotNote"></label>
@@ -339,7 +340,7 @@
     <form id="ledgerSnapshotForm" class="sheet-form" novalidate>
       <p class="section-note">总资产、总负债与净资产按当前资产总账自动计算，只需选择日期。保存总账与记录快照是两个独立动作。</p>
       <label>日期<input type="date" id="ledgerSnapshotDate" required></label>
-      <label>时间<input type="time" id="ledgerSnapshotTime" step="60" required></label>
+      <label>时间<input type="time" id="ledgerSnapshotTime" step="1" required></label>
       <dl class="balance-values ledger-totals">
         <dt>总资产</dt><dd id="ledgerSnapshotTotal">¥0.00</dd>
         <dt>总负债</dt><dd id="ledgerSnapshotLiability">¥0.00</dd>

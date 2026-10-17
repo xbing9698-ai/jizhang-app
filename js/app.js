@@ -10,7 +10,7 @@ import { billingPeriodRange, currentBillingPeriod, customDateRange, allTimeRange
 import { renderCategoryPie, renderTrend, colorForCategory } from './charts.js';
 import { iconSvg } from './icons.js';
 import { isManualTransaction, todayDate } from './manual.js';
-import { updateTransactionFields, editAffectsReconciliation } from './transaction-update.js';
+import { editableTransactionCategories } from './transaction-update.js';
 import { latestSnapshot, referenceFromSnapshot, formatSnapshotMoment } from './snapshots.js';
 import { calculateLedgerTotals, hasLedgerAccounts } from './asset-ledger.js';
 import { isReconciledDuplicate, reconciliationCandidates } from './reconciliation.js';
@@ -21,7 +21,7 @@ import { newQuickEntry, keypadAmount, createQuickTransaction, setQuickDirection 
 import { countedExpenseAmount, isValidCountedAmount, canAdjustTransaction, needsReview, filterNeedsReview } from './review.js';
 import {
   saveTransactions, loadAllTransactions, loadMemory,
-  clearAllData, exportBackup, importBackup, deleteManualTransaction, saveExpenseAdjustment,
+  clearAllData, exportBackup, importBackup, deleteManualTransaction, saveExpenseAdjustment, saveTransactionEdit,
   loadSnapshots
 } from './storage.js';
 
@@ -277,10 +277,16 @@ function renderListView(rows) {
 
 const adjustmentDialog = document.getElementById('adjustmentDialog');
 let adjustingId = null;
+let transactionEditBaseline = null;
 
 function editorCategories(direction, current = '') {
-  const choices = direction === '收入' ? INCOME_CATEGORIES : CATEGORIES;
-  return current && choices.includes(current) ? choices : [...new Set([...(current ? [current] : []), ...choices])];
+  const record = transactions.find(t => t.id === adjustingId);
+  return editableTransactionCategories(record || { direction, myCategory:current }, direction);
+}
+
+function readTransactionEditInput() {
+  return Object.fromEntries(['amount','date','direction','category','description'].map(field =>
+    [field, document.getElementById('transaction' + field[0].toUpperCase() + field.slice(1)).value]));
 }
 
 function syncEditorCategories(preferred = '') {
@@ -307,6 +313,7 @@ function onOpenAdjustment(e) {
   document.getElementById('transactionDirection').value = ['支出','收入','中性'].includes(record.direction) ? record.direction : '中性';
   syncEditorCategories(record.myCategory || '其他');
   document.getElementById('transactionDescription').value = record.description || (isManualTransaction(record) ? record.counterparty || '' : '');
+  transactionEditBaseline = readTransactionEditInput();
   document.getElementById('categoryMsg').textContent = '';
   const controls = document.getElementById('adjustmentControls');
   controls.hidden = !canAdjustTransaction(record);
@@ -331,28 +338,15 @@ document.getElementById('transactionEditForm').addEventListener('submit', async 
   controls.forEach(control => { control.disabled = true; });
   const msg = document.getElementById('categoryMsg');
   try {
-    const before = transactions.find(t => t.id === adjustingId);
-    if (!before) throw new Error('记录不存在');
-    let updated = updateTransactionFields(before, {
-      amount:document.getElementById('transactionAmount').value,
-      date:document.getElementById('transactionDate').value,
-      direction:document.getElementById('transactionDirection').value,
-      category:document.getElementById('transactionCategory').value,
-      description:document.getElementById('transactionDescription').value
-    });
-    const changed = new Map([[updated.id, updated]]);
-    if (editAffectsReconciliation(before, updated)) {
-      if (updated.reconciledDuplicateOf) {
-        updated = { ...updated }; delete updated.reconciledDuplicateOf; changed.set(updated.id, updated);
-      }
-      for (const t of transactions) if (t.reconciledDuplicateOf === before.id) {
-        const copy = { ...t }; delete copy.reconciledDuplicateOf; changed.set(copy.id, copy);
-      }
-    }
-    await saveTransactions([...changed.values()]);
-    transactions = transactions.map(t => changed.get(t.id) || t);
+    // 未触碰的字段不提交，避免旧面板把另一页面的新金额/分类改回旧值。
+    const input = readTransactionEditInput();
+    for (const field of Object.keys(input)) if (input[field] === transactionEditBaseline?.[field]) delete input[field];
+    const result = await saveTransactionEdit(adjustingId, input);
+    transactions = await loadAllTransactions();
+    memory = await loadMemory();
     classifyAll(); refreshAll(); adjustmentDialog.close();
-    document.getElementById('adjustmentFeedback').textContent = '交易修改已保存，统计已更新。';
+    document.getElementById('adjustmentFeedback').textContent = result.adjustmentCleared
+      ? '交易修改已保存。原计入金额已失效并清除，请重新确认统计方式。' : '交易修改已保存，统计已更新。';
   } catch (error) { msg.textContent = error.message; }
   finally { controls.forEach(control => { control.disabled = false; }); }
 });
@@ -391,7 +385,7 @@ document.getElementById('reconciliationUndo').addEventListener('click',async e =
   } catch (error) { document.getElementById('categoryMsg').textContent = error.message; }
   finally { button.disabled = false; }
 });
-adjustmentDialog.addEventListener('close', () => { adjustingId = null; });
+adjustmentDialog.addEventListener('close', () => { adjustingId = null; transactionEditBaseline = null; });
 
 async function onDeleteManual(e) {
   const button = e.currentTarget;

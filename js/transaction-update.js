@@ -1,5 +1,6 @@
 import { CATEGORIES, INCOME_CATEGORIES } from './classify.js';
 import { billingPeriodLabel } from './period.js';
+import { isValidCountedAmount } from './review.js';
 
 const money = value => {
   const text = typeof value === 'number' || typeof value === 'string' ? String(value).trim() : '';
@@ -15,8 +16,12 @@ function validDate(date) {
   return date;
 }
 
-function categoriesFor(direction) {
-  return direction === '收入' ? INCOME_CATEGORIES : CATEGORIES;
+export function editableTransactionCategories(record, direction = record?.direction) {
+  const choices = direction === '收入' ? INCOME_CATEGORIES : CATEGORIES;
+  // 只保留原方向下当前已有的分类，不把旧分类带到另一个收支方向。
+  return direction === record?.direction
+    ? [...new Set([...choices, record?.myCategory,
+      ...(record?.importFormat === 'generic-csv' ? [record.rawCategory] : [])].filter(Boolean))] : choices;
 }
 
 export function editAffectsReconciliation(before, after) {
@@ -26,14 +31,14 @@ export function editAffectsReconciliation(before, after) {
 
 export function updateTransactionFields(record, input) {
   if (!record?.id) throw new Error('记录不存在');
-  const date = validDate(input.date);
-  const direction = String(input.direction || '');
+  const date = validDate(input.date ?? String(record.datetime || '').slice(0,10));
+  const direction = String(input.direction ?? record.direction ?? '');
   if (!['支出','收入','中性'].includes(direction)) throw new Error('请选择有效收支类型');
-  const amount = money(input.amount);
-  const choices = categoriesFor(direction);
-  const category = String(input.category || '').trim();
+  const amount = money(input.amount ?? record.amount);
+  const choices = editableTransactionCategories(record, direction);
+  const category = String(input.category ?? record.myCategory ?? '其他').trim();
   if (!choices.includes(category)) throw new Error('请选择合法分类');
-  const description = String(input.description ?? '').trim();
+  const description = String(input.description ?? record.description ?? '').trim();
   const oldDatetime = String(record.datetime || '');
   const time = /^\d{4}-\d{2}-\d{2}(T.*)$/.exec(oldDatetime)?.[1] || 'T00:00:00';
   const updated = {
@@ -53,6 +58,10 @@ export function updateTransactionFields(record, input) {
   if (direction !== '支出') {
     delete updated.countedAmount;
     delete updated.excluded;
+    delete updated.reviewed;
+  } else if (record.countedAmount != null && !isValidCountedAmount(record.countedAmount, amount)) {
+    // 金额调小使旧调整失效：清除并要求重审，金额改回也不能复活旧值。
+    delete updated.countedAmount;
     delete updated.reviewed;
   }
   return updated;

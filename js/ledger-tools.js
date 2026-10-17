@@ -1,6 +1,6 @@
 import { GENERIC_CSV_TEMPLATE } from './generic-csv.js';
 import { todayDate } from './manual.js';
-import { createSnapshot, reconcileBalance, formatSnapshotMoment } from './snapshots.js';
+import { createSnapshot, reconcileBalance, formatSnapshotMoment, snapshotTimeNow } from './snapshots.js';
 import { reconciliationCandidates } from './reconciliation.js';
 import { currentBillingPeriod, customDateRange, rangeText } from './period.js';
 import { loadSnapshots, saveSnapshot, deleteSnapshot, saveReconciliation, loadAssetLedger } from './storage.js';
@@ -10,7 +10,6 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
   const el = id => document.getElementById(id);
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const money = n => '¥' + n.toLocaleString('zh-CN', {minimumFractionDigits:2,maximumFractionDigits:2});
-  const nowTime = () => { const d = new Date(), pad = n => String(n).padStart(2,'0'); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
   let snapshots = [], editingId = null, pendingDeleteId = null, currentPair = null, busy = false;
   let deferred = new Set();
   const key = p => JSON.stringify([p.manual.id,p.imported.id]);
@@ -45,7 +44,11 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
     const s = snapshots.find(s => s.id === id);
     el('snapshotEditTitle').textContent = s ? '编辑快照' : '新增快照';
     el('snapshotDate').value = s?.date || date || todayDate();
-    el('snapshotTime').value = s?.capturedAt?.slice(11,16) || nowTime();
+    const legacy = !!s && !s.capturedAt;
+    el('snapshotTime').value = s ? (s.capturedAt?.slice(11) || '') : snapshotTimeNow();
+    el('snapshotTime').disabled = legacy;
+    el('snapshotTime').required = !legacy;
+    el('snapshotTimeNote').textContent = legacy ? '旧快照按当日结束处理，编辑不会转换为具体时点。' : '资产余额对应的实际盘点时刻，精确到秒。';
     el('snapshotAssets').value = s ? s.totalAssets : '';
     el('snapshotLiabilities').value = s ? s.totalLiabilities : '0';
     el('snapshotNote').value = s?.note || '';
@@ -54,7 +57,8 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
   }
   function snapshotInput() {
     const date = el('snapshotDate').value;
-    return { date, time:el('snapshotTime').value, totalAssets:el('snapshotAssets').value,
+    const existing = snapshots.find(s => s.id === editingId);
+    return { date, time:existing && !existing.capturedAt ? undefined : el('snapshotTime').value, totalAssets:el('snapshotAssets').value,
       totalLiabilities:el('snapshotLiabilities').value, note:el('snapshotNote').value,
       transactionIdsAtCapture:!editingId && date === todayDate() ? getTransactions().map(t => t.id) : undefined };
   }
@@ -134,7 +138,7 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
     try {
       await load();
       if (el('snapshotsDialog').open) el('snapshotsDialog').close();
-      const options = '<option value="">请选择快照</option>' + snapshots.map(s => `<option value="${esc(s.id)}">${esc(s.date)} · ${money(s.netAssets)}${s.note ? ' · ' + esc(s.note) : ''}</option>`).join('');
+      const options = '<option value="">请选择快照</option>' + snapshots.map(s => `<option value="${esc(s.id)}">${esc(formatSnapshotMoment(s))} · ${money(s.netAssets)}${s.note ? ' · ' + esc(s.note) : ''}</option>`).join('');
       el('balanceOpening').innerHTML = options; el('balanceClosing').innerHTML = options;
       el('balanceMode').value = getRange().start ? 'current' : 'billing';
       const initial = getRange().start ? getRange() : currentBillingPeriod();
@@ -149,7 +153,7 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
     e.preventDefault(); el('balanceResult').textContent = '';
     try {
       const r = reconcileBalance(snapshots.find(s => s.id === el('balanceOpening').value), snapshots.find(s => s.id === el('balanceClosing').value),getTransactions(),balanceRange());
-      el('balanceMsg').textContent = '';
+      el('balanceMsg').textContent = r.uncertainCount ? `有 ${r.uncertainCount} 笔同日无准确时间的流水，无法确认是否包含在盘点中，核对结果可能有偏差。` : '';
       el('balanceResult').innerHTML = '<dl class="balance-values">' + [
         ['期初净资产',r.opening],['＋ 期间收入',r.income],['− 期间支出',r.expense],['理论期末净资产',r.theoretical],['实际期末净资产',r.actual],['核对差额',r.difference]
       ].map(([label,value]) => `<dt>${label}</dt><dd>${label === '核对差额' && value > 0 ? '+' : ''}${money(value)}</dd>`).join('') + '</dl>';
