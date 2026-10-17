@@ -1,4 +1,4 @@
-import { createSnapshot } from './snapshots.js';
+import { createSnapshot, snapshotTimeNow } from './snapshots.js';
 import { loadAssetLedger, saveAssetLedger, saveSnapshot } from './storage.js';
 import {
   emptyLedger, addAccount, updateAccount, removeAccount, calculateLedgerTotals,
@@ -12,7 +12,7 @@ const money = n => '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits:2, m
 
 // 资产总账 = 当前状态。保存总账与记录快照是两个独立动作：
 // 改余额只写总账，快照只在用户点击"记录当前为资产快照"时生成。
-export function setupAssetLedgerUI({ refreshApp, refreshSnapshots }) {
+export function setupAssetLedgerUI({ refreshApp, refreshSnapshots, getTransactions = () => [] }) {
   const el = id => document.getElementById(id);
   let ledger = emptyLedger();
   let editingId = null, pendingDeleteId = null, busy = false;
@@ -113,7 +113,7 @@ export function setupAssetLedgerUI({ refreshApp, refreshSnapshots }) {
     try {
       ledger = removeAccount(ledger, pendingDeleteId);
       await saveAssetLedger(ledger);
-      await load();
+      await load(); refreshApp();
       el('accountMsg').textContent = '账户已删除。';
     } catch (error) { el('accountMsg').textContent = error.message; }
     finally { cancelAccountDelete(); setBusy(false); }
@@ -131,7 +131,7 @@ export function setupAssetLedgerUI({ refreshApp, refreshSnapshots }) {
     try {
       ledger = editingId ? updateAccount(ledger, editingId, input) : addAccount(ledger, input);
       await saveAssetLedger(ledger);
-      await load();
+      await load(); refreshApp();
       el('accountEditDialog').close();
       el('accountMsg').textContent = editingId ? '账户已更新。' : '账户已添加。';
     } catch (error) { el('accountEditMsg').textContent = error.message; }
@@ -142,6 +142,7 @@ export function setupAssetLedgerUI({ refreshApp, refreshSnapshots }) {
   function openSnapshotFromLedger() {
     const totals = calculateLedgerTotals(ledger.accounts);
     el('ledgerSnapshotDate').value = todayDate();
+    el('ledgerSnapshotTime').value = snapshotTimeNow();
     el('ledgerSnapshotTotal').textContent = money(totals.totalAssets);
     el('ledgerSnapshotLiability').textContent = money(totals.totalLiabilities);
     el('ledgerSnapshotNet').textContent = money(totals.netAssets);
@@ -156,7 +157,7 @@ export function setupAssetLedgerUI({ refreshApp, refreshSnapshots }) {
     if (busy) return;
     setBusy(true);
     try {
-      await recordLedgerSnapshot(el('ledgerSnapshotDate').value);
+      await recordLedgerSnapshot(el('ledgerSnapshotDate').value, el('ledgerSnapshotTime').value);
       el('ledgerSnapshotDialog').close();
       el('accountMsg').textContent = '已按当前总账记录资产快照。';
     } catch (error) { el('ledgerSnapshotMsg').textContent = error.message; }
@@ -164,14 +165,15 @@ export function setupAssetLedgerUI({ refreshApp, refreshSnapshots }) {
   });
 
   // 用资产总账的自动合计生成一条资产快照；用户只需要日期。
-  async function recordLedgerSnapshot(date) {
+  async function recordLedgerSnapshot(date, time = snapshotTimeNow()) {
     if (!hasLedgerAccounts(ledger)) throw new Error('还没有建立资产总账');
     const totals = calculateLedgerTotals(ledger.accounts);
-    const saved = await saveSnapshot(createSnapshot({
-      date, totalAssets:totals.totalAssets, totalLiabilities:totals.totalLiabilities,
-      note:'来自资产总账'
-    }));
-    await refreshSnapshots();
+    const saved = await saveSnapshot({
+      date, time, totalAssets:totals.totalAssets, totalLiabilities:totals.totalLiabilities,
+      note:'来自资产总账',
+      transactionIdsAtCapture:date === todayDate() ? getTransactions().map(t => t.id) : undefined
+    });
+    await refreshSnapshots(); refreshApp();
     return saved;
   }
 
@@ -182,5 +184,5 @@ export function setupAssetLedgerUI({ refreshApp, refreshSnapshots }) {
     renderLedger();
   }
 
-  return { load, openLedger, recordLedgerSnapshot, getLedger:() => ledger };
+  return { load, openLedger, openSnapshotFromLedger, recordLedgerSnapshot, getLedger:() => ledger };
 }

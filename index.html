@@ -34,7 +34,7 @@
           <button type="button" id="allRange" aria-pressed="false">使用以来</button>
         </div>
         <div class="range-context">
-          <label id="billingMonthWrap" class="billing-month"><span class="sr-only">选择账期</span><input type="month" id="monthPick" aria-label="选择账期"></label>
+          <label id="billingMonthWrap" class="billing-month"><span class="sr-only">选择账期</span><select id="monthPick" aria-label="选择账期"></select></label>
         </div>
         </details>
       </div>
@@ -69,11 +69,15 @@
           <button type="button" class="btn btn-secondary" id="assetLedgerOpenEmpty">建立总账 ›</button>
         </div>
         <div id="assetCurrentBody" hidden>
-          <p class="asset-net-label">当前净资产</p>
+          <p class="asset-net-label" id="assetNetLabel">参考当前净资产</p>
           <p class="asset-net-value" id="assetNet">¥0.00</p>
+          <p class="asset-reference-meta" id="assetReferenceMeta"></p>
+          <p class="asset-reference-change" id="assetReferenceChange"></p>
+          <p class="asset-reference-warning" id="assetReferenceWarning" hidden></p>
           <p class="asset-split"><span>总资产 <b id="assetTotal">¥0.00</b></span><span>总负债 <b id="assetLiability">¥0.00</b></span></p>
         </div>
         <div class="asset-actions">
+          <button type="button" class="text-button" id="assetSnapshotNow">记录盘点</button>
           <button type="button" class="text-button" id="assetLedgerOpen">管理资产</button>
           <button type="button" class="text-button" id="snapshotsOpen">资产快照</button>
           <button type="button" class="text-button" id="balanceOpen">账期核对</button>
@@ -136,7 +140,7 @@
         <button class="seg active" data-mode="list" role="tab">交易列表</button>
         <button class="seg" data-mode="merchant" role="tab">按商户汇总</button>
       </div>
-      <div id="listView"><div id="txnList" class="transaction-list"></div><p class="empty-hint" id="tableEmpty">还没有记录</p></div>
+      <div id="listView"><div id="txnList" class="transaction-list"></div><div class="detail-empty" id="tableEmpty"><p class="empty-hint" id="tableEmptyText">还没有记录</p><button type="button" class="btn btn-secondary" id="emptyImport">去导入</button></div></div>
       <ul class="merchant-list" id="merchantView" hidden></ul>
     </section>
 
@@ -241,27 +245,38 @@
   <dialog id="adjustmentDialog" class="sheet transaction-sheet" aria-labelledby="adjustmentTitle">
     <div class="sheet-header"><h2 id="adjustmentTitle">交易详情</h2><button type="button" class="sheet-close" id="adjustmentClose" aria-label="关闭交易详情">×</button></div>
     <dl id="adjustmentFacts" class="adjustment-facts"></dl>
-    <div class="category-editor sheet-form"><label>分类<select id="transactionCategory"></select></label><button type="button" class="btn btn-primary" id="saveCategory">保存分类</button><p id="categoryMsg" class="form-error" role="alert"></p></div>
-    <details id="adjustmentControls" class="adjustment-controls"><summary>调整统计</summary>
-    <p id="adjustmentRule" class="card-desc"></p>
-    <div class="btn-row">
-      <button type="button" class="btn btn-secondary" id="adjustmentInclude">正常计入</button>
-      <button type="button" class="btn btn-secondary" id="adjustmentExclude">不计入统计</button>
-    </div>
-    <form id="adjustmentForm" class="adjustment-form" novalidate>
-      <label for="adjustmentAmount">实际计入金额（元）</label>
-      <input type="number" id="adjustmentAmount" inputmode="decimal" min="0.01" step="0.01" required>
-      <button type="submit" class="btn btn-primary" id="adjustmentSave">保存计入金额</button>
+    <form id="transactionEditForm" class="sheet-form transaction-edit-form" novalidate>
+      <label>金额（元）<input type="number" id="transactionAmount" inputmode="decimal" min="0.01" step="0.01" required></label>
+      <label>日期<input type="date" id="transactionDate" required></label>
+      <label>收支<select id="transactionDirection"><option value="支出">支出</option><option value="收入">收入</option><option value="中性">不计收支</option></select></label>
+      <label>分类<select id="transactionCategory"></select></label>
+      <label>说明<input type="text" id="transactionDescription" maxlength="160"></label>
+      <p class="section-note">导入记录的来源和商户保持原样；人工修改不会改变导入身份，也不会影响同一账单再次导入时的去重。</p>
+      <p id="categoryMsg" class="form-error" role="alert"></p>
+      <button type="submit" class="btn btn-primary" id="saveTransaction">保存修改</button>
     </form>
-    <p id="adjustmentMsg" class="import-msg error" role="status" aria-live="polite"></p>
+    <details class="advanced-transaction"><summary>高级处理</summary>
+      <div id="adjustmentControls" class="adjustment-controls">
+        <p id="adjustmentRule" class="card-desc"></p>
+        <div class="btn-row">
+          <button type="button" class="btn btn-secondary" id="adjustmentInclude">正常计入</button>
+          <button type="button" class="btn btn-secondary" id="adjustmentExclude">不计入统计</button>
+        </div>
+        <form id="adjustmentForm" class="adjustment-form" novalidate>
+          <label for="adjustmentAmount">实际计入金额（元）</label>
+          <input type="number" id="adjustmentAmount" inputmode="decimal" min="0.01" step="0.01" required>
+          <button type="submit" class="btn btn-secondary" id="adjustmentSave">保存计入金额</button>
+        </form>
+        <p id="adjustmentMsg" class="import-msg error" role="status" aria-live="polite"></p>
+      </div>
+      <button type="button" class="btn btn-danger" id="transactionDelete" hidden>删除手动记录</button>
+      <button type="button" class="btn btn-secondary" id="reconciliationUndo" hidden>撤销核对</button>
     </details>
-    <button type="button" class="btn btn-danger" id="transactionDelete" hidden>删除手动记录</button>
-    <button type="button" class="btn btn-secondary" id="reconciliationUndo" hidden>撤销核对</button>
   </dialog>
 
   <dialog id="snapshotsDialog" class="sheet" aria-labelledby="snapshotsTitle">
     <div class="sheet-header"><h2 id="snapshotsTitle">资产快照</h2><button type="button" class="sheet-close" id="snapshotsClose" aria-label="关闭资产快照">×</button></div>
-    <p class="section-note">记录一个时间点的总资产与总负债，不管理账户。资产总账的"记录当前为资产快照"会按当前账户自动算出这三个数。</p>
+    <p class="section-note">记录一个具体时间点的总资产与总负债，不管理账户。资产总账的“记录当前为资产快照”会按当前账户自动算出这三个数。</p>
     <div class="btn-row"><button type="button" class="btn btn-primary" id="snapshotAdd">新增快照</button><button type="button" class="btn btn-secondary" id="snapshotFromLedgerFill">从资产总账填入</button></div>
     <button type="button" class="btn btn-secondary" id="snapshotBalance">账期核对</button>
     <p id="snapshotListMsg" class="import-msg" role="status"></p>
@@ -276,6 +291,8 @@
     <div class="sheet-header"><h2 id="snapshotEditTitle">新增快照</h2><button type="button" class="sheet-close" id="snapshotEditClose" aria-label="关闭快照输入">×</button></div>
     <form id="snapshotForm" class="sheet-form" novalidate>
       <label>日期<input type="date" id="snapshotDate" required></label>
+      <label>时间<input type="time" id="snapshotTime" step="1" required></label>
+      <p id="snapshotTimeNote" class="section-note"></p>
       <label>总资产（元）<input type="number" id="snapshotAssets" inputmode="decimal" min="0" step="0.01" required></label>
       <label>总负债（元）<input type="number" id="snapshotLiabilities" inputmode="decimal" min="0" step="0.01" value="0" required></label>
       <label>备注（可选）<input type="text" id="snapshotNote"></label>
@@ -323,6 +340,7 @@
     <form id="ledgerSnapshotForm" class="sheet-form" novalidate>
       <p class="section-note">总资产、总负债与净资产按当前资产总账自动计算，只需选择日期。保存总账与记录快照是两个独立动作。</p>
       <label>日期<input type="date" id="ledgerSnapshotDate" required></label>
+      <label>时间<input type="time" id="ledgerSnapshotTime" step="1" required></label>
       <dl class="balance-values ledger-totals">
         <dt>总资产</dt><dd id="ledgerSnapshotTotal">¥0.00</dd>
         <dt>总负债</dt><dd id="ledgerSnapshotLiability">¥0.00</dd>
@@ -345,7 +363,7 @@
       <p id="balanceMsg" class="form-error" role="alert"></p>
     </form>
     <div id="balanceResult" aria-live="polite"></div>
-    <p class="section-note">快照代表该日结束时的资产状态。核对仅计算期初快照日期之后、期末快照日期当天及之前的收支，并与所选范围取交集。差额仅用于辅助检查。</p>
+    <p class="section-note">新快照按具体时间点核对；旧快照没有时间时仍按原来的“当日结束”口径兼容。差额仅用于辅助检查。</p>
   </dialog>
 
   <dialog id="duplicateDialog" class="sheet" aria-labelledby="duplicateTitle">

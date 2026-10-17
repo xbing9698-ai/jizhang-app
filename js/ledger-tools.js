@@ -1,6 +1,6 @@
 import { GENERIC_CSV_TEMPLATE } from './generic-csv.js';
 import { todayDate } from './manual.js';
-import { createSnapshot, reconcileBalance } from './snapshots.js';
+import { createSnapshot, reconcileBalance, formatSnapshotMoment, snapshotTimeNow } from './snapshots.js';
 import { reconciliationCandidates } from './reconciliation.js';
 import { currentBillingPeriod, customDateRange, rangeText } from './period.js';
 import { loadSnapshots, saveSnapshot, deleteSnapshot, saveReconciliation, loadAssetLedger } from './storage.js';
@@ -32,7 +32,7 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
   }
   function renderSnapshots() {
     el('snapshotList').innerHTML = snapshots.length ? snapshots.map(s =>
-      `<div class="snapshot-row"><strong>${esc(s.date)} · 净资产 ${money(s.netAssets)}</strong><p>资产 ${money(s.totalAssets)} · 负债 ${money(s.totalLiabilities)}</p><p>${esc(s.note)}</p><div class="btn-row"><button type="button" class="text-button" data-edit="${esc(s.id)}">编辑</button><button type="button" class="text-button" data-delete="${esc(s.id)}">删除</button></div></div>`).join('') : '<p class="empty-hint">还没有资产快照</p>';
+      `<div class="snapshot-row"><strong>${esc(formatSnapshotMoment(s))} · 净资产 ${money(s.netAssets)}</strong><p>资产 ${money(s.totalAssets)} · 负债 ${money(s.totalLiabilities)}</p><p>${esc(s.note)}</p><div class="btn-row"><button type="button" class="text-button" data-edit="${esc(s.id)}">编辑</button><button type="button" class="text-button" data-delete="${esc(s.id)}">删除</button></div></div>`).join('') : '<p class="empty-hint">还没有资产快照</p>';
   }
   function cancelSnapshotDelete() { pendingDeleteId = null; el('snapshotDeletePrompt').hidden = true; }
   function openSnapshots() { cancelSnapshotDelete(); el('snapshotListMsg').textContent = ''; el('snapshotsDialog').showModal(); }
@@ -44,14 +44,24 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
     const s = snapshots.find(s => s.id === id);
     el('snapshotEditTitle').textContent = s ? '编辑快照' : '新增快照';
     el('snapshotDate').value = s?.date || date || todayDate();
+    const legacy = !!s && !s.capturedAt;
+    el('snapshotTime').value = s ? (s.capturedAt?.slice(11) || '') : snapshotTimeNow();
+    el('snapshotTime').disabled = legacy;
+    el('snapshotTime').required = !legacy;
+    el('snapshotTimeNote').textContent = legacy ? '旧快照按当日结束处理，编辑不会转换为具体时点。' : '资产余额对应的实际盘点时刻，精确到秒。';
     el('snapshotAssets').value = s ? s.totalAssets : '';
     el('snapshotLiabilities').value = s ? s.totalLiabilities : '0';
     el('snapshotNote').value = s?.note || '';
     el('snapshotEditMsg').textContent = '';
     previewNet(); el('snapshotEditDialog').showModal();
   }
-  function snapshotInput() { return { date:el('snapshotDate').value, totalAssets:el('snapshotAssets').value,
-    totalLiabilities:el('snapshotLiabilities').value, note:el('snapshotNote').value }; }
+  function snapshotInput() {
+    const date = el('snapshotDate').value;
+    const existing = snapshots.find(s => s.id === editingId);
+    return { date, time:existing && !existing.capturedAt ? undefined : el('snapshotTime').value, totalAssets:el('snapshotAssets').value,
+      totalLiabilities:el('snapshotLiabilities').value, note:el('snapshotNote').value,
+      transactionIdsAtCapture:!editingId && date === todayDate() ? getTransactions().map(t => t.id) : undefined };
+  }
   function previewNet() {
     try { el('snapshotNet').textContent = money(createSnapshot(snapshotInput()).netAssets); }
     catch { el('snapshotNet').textContent = '—'; }
@@ -96,16 +106,16 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
   el('snapshotDeleteConfirm').addEventListener('click',async () => {
     if (busy || !pendingDeleteId) return;
     setBusy(true);
-    try { await deleteSnapshot(pendingDeleteId); await load(); el('snapshotListMsg').textContent = '快照已删除。'; }
+    try { await deleteSnapshot(pendingDeleteId); await load(); refreshApp(); el('snapshotListMsg').textContent = '快照已删除。'; }
     catch (error) { el('snapshotListMsg').textContent = error.message; }
     finally { setBusy(false); }
   });
-  ['snapshotDate','snapshotAssets','snapshotLiabilities'].forEach(id => el(id).addEventListener('input',previewNet));
+  ['snapshotDate','snapshotTime','snapshotAssets','snapshotLiabilities'].forEach(id => el(id).addEventListener('input',previewNet));
   el('snapshotEditClose').addEventListener('click',() => { if (!busy) el('snapshotEditDialog').close(); });
   el('snapshotEditDialog').addEventListener('cancel',e => { if (busy) e.preventDefault(); });
   el('snapshotForm').addEventListener('submit',async e => {
     e.preventDefault(); if (busy) return; setBusy(true);
-    try { await saveSnapshot(snapshotInput(),editingId); await load(); el('snapshotEditDialog').close(); el('snapshotListMsg').textContent = '快照已保存。'; }
+    try { await saveSnapshot(snapshotInput(),editingId); await load(); refreshApp(); el('snapshotEditDialog').close(); el('snapshotListMsg').textContent = '快照已保存。'; }
     catch (error) { el('snapshotEditMsg').textContent = error.message; }
     finally { setBusy(false); }
   });
@@ -128,7 +138,7 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
     try {
       await load();
       if (el('snapshotsDialog').open) el('snapshotsDialog').close();
-      const options = '<option value="">请选择快照</option>' + snapshots.map(s => `<option value="${esc(s.id)}">${esc(s.date)} · ${money(s.netAssets)}${s.note ? ' · ' + esc(s.note) : ''}</option>`).join('');
+      const options = '<option value="">请选择快照</option>' + snapshots.map(s => `<option value="${esc(s.id)}">${esc(formatSnapshotMoment(s))} · ${money(s.netAssets)}${s.note ? ' · ' + esc(s.note) : ''}</option>`).join('');
       el('balanceOpening').innerHTML = options; el('balanceClosing').innerHTML = options;
       el('balanceMode').value = getRange().start ? 'current' : 'billing';
       const initial = getRange().start ? getRange() : currentBillingPeriod();
@@ -143,7 +153,7 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
     e.preventDefault(); el('balanceResult').textContent = '';
     try {
       const r = reconcileBalance(snapshots.find(s => s.id === el('balanceOpening').value), snapshots.find(s => s.id === el('balanceClosing').value),getTransactions(),balanceRange());
-      el('balanceMsg').textContent = '';
+      el('balanceMsg').textContent = r.uncertainCount ? `有 ${r.uncertainCount} 笔同日无准确时间的流水，无法确认是否包含在盘点中，核对结果可能有偏差。` : '';
       el('balanceResult').innerHTML = '<dl class="balance-values">' + [
         ['期初净资产',r.opening],['＋ 期间收入',r.income],['− 期间支出',r.expense],['理论期末净资产',r.theoretical],['实际期末净资产',r.actual],['核对差额',r.difference]
       ].map(([label,value]) => `<dt>${label}</dt><dd>${label === '核对差额' && value > 0 ? '+' : ''}${money(value)}</dd>`).join('') + '</dl>';
@@ -176,7 +186,7 @@ export function setupLedgerTools({ getTransactions, getRange, updateTransaction,
     const url = URL.createObjectURL(new Blob([GENERIC_CSV_TEMPLATE],{type:'text/csv;charset=utf-8'}));
     const a = document.createElement('a'); a.href = url; a.download = '通用账单模板.csv'; a.click(); URL.revokeObjectURL(url);
   });
-  return { load, refresh, newSnapshot, async undo(id) {
+  return { load, refresh, newSnapshot, getSnapshots:() => snapshots.slice(), async undo(id) {
     const updated = await saveReconciliation(id,null,'undo'); updateTransaction(updated); refreshApp();
   } };
 }

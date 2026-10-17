@@ -83,13 +83,13 @@ test('首页资产与收支分开：两块主区域及三个资产二级入口�
   assert.ok(html.indexOf('class="global-quick-action"')<html.indexOf('<nav'));
 });
 
-test('首页删除预计净资产及快照公式布局，保留窄屏安全的真实资产卡片',()=>{
+test('首页恢复参考当前净资产，但底部导航与记一笔结构保持不变',()=>{
   const home=html.slice(html.indexOf('id="view-overview"'),html.indexOf('id="view-detail"'));
-  for(const label of ['预计当前净资产','起始净资产','快照后收入','快照后支出','快照后收支差额'])assert.ok(!home.includes(label));
-  for(const id of ['netUsage','netStartList','usageNetCard','usageDiff'])assert.ok(!html.includes(`id="${id}"`));
-  assert.ok(!css.includes('.net-usage{'));assert.ok(!css.includes('.usage-net-card{'));
-  assert.match(css,/\.asset-actions\{[^}]*flex-wrap:wrap/);
-  assert.match(css,/\.asset-net-value\{[^}]*overflow-wrap:anywhere/);
+  for(const id of ['assetNetLabel','assetNet','assetReferenceMeta','assetReferenceChange','assetSnapshotNow']) assert.ok(home.includes(`id="${id}"`));
+  assert.match(app,/function renderAssetReference()/);
+  assert.ok(app.includes('referenceFromSnapshot(latest, transactions)'));
   const nav=html.match(/<nav[\s\S]*?<\/nav>/)[0];
   assert.deepEqual([...nav.matchAll(/data-view="([^"]+)"/g)].map(m=>m[1]),['overview','detail','import']);
+  assert.equal([...html.matchAll(/id="quickEntryOpen"/g)].length,1);
+  assert.ok(html.indexOf('class="global-quick-action"')<html.indexOf('<nav'));
 });

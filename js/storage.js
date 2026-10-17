@@ -1,6 +1,7 @@
 import { isManualTransaction } from './manual.js';
 import { adjustTransaction } from './review.js';
 import { categoryUpdatePlan } from './transaction-edit.js';
+import { updateTransactionFields, editAffectsReconciliation } from './transaction-update.js';
 import { createSnapshot, sortSnapshots } from './snapshots.js';
 import { reconcileTransaction, isReconciledDuplicate } from './reconciliation.js';
 import { LEDGER_ID, normalizeLedger, emptyLedger } from './asset-ledger.js';
@@ -98,6 +99,55 @@ export async function saveExpenseAdjustment(id, action, amount) {
     tx.oncomplete = () => resolve(updated);
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(failure || tx.error || new Error('调整未完成'));
+  }).finally(() => db.close());
+}
+
+// 编辑与关联核对、商户记忆在同一事务内完成；只在最新记录上应用可编辑字段。
+export async function saveTransactionEdit(id, input) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORE_TXN, STORE_MEM], 'readwrite');
+    const store = tx.objectStore(STORE_TXN);
+    let result, failure;
+    const request = store.getAll();
+    request.onsuccess = () => {
+      try {
+        const rows = request.result;
+        const before = rows.find(t => t.id === id);
+        if (!before) throw new Error('记录已不存在，请刷新后重试');
+        const updated = updateTransactionFields(before, input);
+        const current = new Map(rows.map(t => [t.id, t]));
+        current.set(id, updated);
+        const touchedIds = new Set([id]);
+        let memoryEntry = null;
+        if (before.myCategory !== updated.myCategory) {
+          const plan = categoryUpdatePlan([...current.values()], id, updated.myCategory);
+          for (const t of plan.touched) { current.set(t.id, t); touchedIds.add(t.id); }
+          memoryEntry = plan.memoryEntry;
+        }
+        if (editAffectsReconciliation(before, updated)) {
+          for (const t of current.values()) {
+            const own = t.id === id;
+            const linked = t.reconciledDuplicateOf === id;
+            const dismissed = t.reconciliationDismissedIds?.includes(id);
+            if (!own && !linked && !dismissed) continue;
+            const copy = { ...t };
+            if (own || linked) delete copy.reconciledDuplicateOf;
+            if (own) delete copy.reconciliationDismissedIds;
+            else if (dismissed) copy.reconciliationDismissedIds = copy.reconciliationDismissedIds.filter(other => other !== id);
+            current.set(t.id, copy); touchedIds.add(t.id);
+          }
+        }
+        const touched = [...touchedIds].map(key => current.get(key));
+        for (const t of touched) store.put(t);
+        if (memoryEntry) tx.objectStore(STORE_MEM).put(memoryEntry);
+        result = { touched, memoryEntry,
+          adjustmentCleared:before.countedAmount != null && updated.countedAmount == null && updated.direction === '支出' };
+      } catch (error) { failure = error; tx.abort(); }
+    };
+    tx.oncomplete = () => resolve(result);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(failure || tx.error || new Error('编辑保存未完成'));
   }).finally(() => db.close());
 }
 

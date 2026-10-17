@@ -3,8 +3,8 @@
 // 离线时回退已有缓存。按需资源（如 XLSX）走缓存优先并允许运行时缓存。
 //
 // CACHE 版本号仍然保留，但它只用于预缓存与清理旧缓存，不再是"必须手改否则永不更新"的唯一机制。
-const CACHE = 'jizhang-v36';
-const RUNTIME_CACHE = 'jizhang-runtime-v36';
+const CACHE = 'jizhang-v38';
+const RUNTIME_CACHE = 'jizhang-runtime-v38';
 // 应用外壳：这些文件必须尽量保持同一版本，避免 HTML 与 JS/CSS 新旧混搭。
 const SHELL = [
   './index.html', './css/style.css',
@@ -13,7 +13,7 @@ const SHELL = [
   './js/identity.js','./js/import-transactions.js',
   './js/period.js',
   './js/manual.js',
-  './js/quick-entry.js',
+  './js/quick-entry.js','./js/transaction-update.js',
   './js/detail.js','./js/transaction-edit.js',
   './js/generic-csv.js','./js/snapshots.js','./js/reconciliation.js','./js/ledger-tools.js',
   './js/review.js','./js/asset-ledger.js','./js/asset-ledger-ui.js','./js/xlsx-loader.js',

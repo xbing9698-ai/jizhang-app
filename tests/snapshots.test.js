@@ -25,7 +25,7 @@ const transactions=[
 ];
 test('账期核对期初加收入减实际支出，理论7100、实际7038、差额-62',()=>{
   const r=reconcileBalance(make(5000),make(7038,0,'2026-10-14'),transactions,billingPeriodRange('2026-10'));
-  assert.deepEqual(r,{opening:5000,income:5200,expense:3100,theoretical:7100,actual:7038,difference:-62});
+  assert.deepEqual(r,{opening:5000,income:5200,expense:3100,theoretical:7100,actual:7038,difference:-62,uncertainCount:0});
 });
 test('账期核对正差额与自定义首尾过滤正确',()=>{
   const r=reconcileBalance(make(5000),make(5100,0,'2026-10-14'),transactions,customDateRange('2026-10-03','2026-10-04'));
@@ -78,7 +78,7 @@ test('账期核对采用(opening.date, closing.date]，期初当天不重算、�
     {datetime:'2026-10-17T00:00:00',direction:'收入',amount:999}
   ];
   const r=reconcileBalance(opening,closing,rows,customDateRange('2026-10-14','2026-10-17'));
-  assert.deepEqual(r,{opening:5481.85,income:200,expense:100,theoretical:5581.85,actual:5581.85,difference:0});
+  assert.deepEqual(r,{opening:5481.85,income:200,expense:100,theoretical:5581.85,actual:5581.85,difference:0,uncertainCount:0});
 });
 
 test('账期核对仍与所选自定义范围取交集，同日期的两张快照没有增量',()=>{
