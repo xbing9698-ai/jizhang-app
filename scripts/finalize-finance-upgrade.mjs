@@ -36,7 +36,7 @@ const write = (p, s) => writeFileSync(p, s, 'utf8');
   write(p, s);
 }
 
-// 3) 两个断言本意是检查源码包含固定文本，不应把括号当正则分组。
+// 3) 这些断言本意是检查源码包含固定文本，不应把 CSS/JS 的括号方括号当正则语法。
 {
   const p = 'tests/usage-dashboard.test.js';
   let s = read(p);
@@ -48,13 +48,21 @@ const write = (p, s) => writeFileSync(p, s, 'utf8');
     "assert.match(fn,/if \\(!latest && !hasLedger\\)/);",
     "assert.ok(fn.includes('if (!latest && !hasLedger)'));"
   );
-  // 兼容上一轮生成文件中转义符已被模板吃掉的形式。
   s = s.replace(
     "assert.match(fn,/if (!latest && !hasLedger)/);",
     "assert.ok(fn.includes('if (!latest && !hasLedger)'));"
   );
+  s = s.replace(
+    "assert.match(css,/\\.range-picker\\[open\\] \\.range-label\\{display:none\\}/);",
+    "assert.ok(css.includes('.range-picker[open] .range-label{display:none}'));"
+  );
+  s = s.replace(
+    "assert.match(css,/.range-picker[open] .range-label{display:none}/);",
+    "assert.ok(css.includes('.range-picker[open] .range-label{display:none}'));"
+  );
   if (!s.includes("assert.ok(app.includes('function billingOptionLabel(label)'))")) throw new Error('账期标签断言未修复');
   if (!s.includes("assert.ok(fn.includes('if (!latest && !hasLedger)'))")) throw new Error('空资产状态断言未修复');
+  if (!s.includes("assert.ok(css.includes('.range-picker[open] .range-label{display:none}'))")) throw new Error('时间卡紧凑样式断言未修复');
   write(p, s);
 }
 
